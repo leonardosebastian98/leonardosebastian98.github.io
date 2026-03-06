@@ -42,8 +42,19 @@
 <body>
   <div class="container">
     <div class="header">
-      <h1>📊 Monitor Multi-Equipo - TM</h1>
-      <div class="subtitle">Escala de tiempo real optimizada</div>
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+        <div>
+          <h1>📊 Monitor Multi-Equipo - TM</h1>
+          <div class="subtitle">Escala de tiempo real optimizada</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <label style="color: #666; font-weight: 500;">Máquinas:</label>
+          <select id="machineSelector" onchange="changeMachineType()" style="padding: 8px 12px; border: 2px solid #e9ecef; border-radius: 6px; font-size: 0.9em; cursor: pointer; background: white;">
+            <option value="armadoras">Armadoras</option>
+            <option value="expansoras">Expansoras</option>
+          </select>
+        </div>
+      </div>
     </div>
     <div class="controls-global">
       <div class="point-size-control">
@@ -66,13 +77,53 @@
     <div id="equipmentContainer"></div>
   </div>
   <script>
+    const MACHINE_CONFIGS = {
+      armadoras: {
+        csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQVrHs_GXmZGUMaOBjo4zr6mtNbFpf45WZ916Bj6LktK0i1F1gofWV_dnZfjam7MAbhDoQap_nZryeO/pub?gid=0&single=true&output=csv',
+        name: 'Armadoras',
+        tco: 240 // Tiempo de Ciclo Óptimo en segundos
+      },
+      expansoras: {
+        csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRkBYlgzc71g76k03IhGUA29lNMKjJl1rgB9WwzXcxT4uHgvzsySXs5tAuQHqQKglMLFgao6u4enqPC/pub?gid=0&single=true&output=csv',
+        name: 'Expansoras',
+        tco: 35 // Tiempo de Ciclo Óptimo en segundos
+      }
+    };
+
+    let currentMachineType = 'armadoras';
     const CONFIG = {
-      csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQVrHs_GXmZGUMaOBjo4zr6mtNbFpf45WZ916Bj6LktK0i1F1gofWV_dnZfjam7MAbhDoQap_nZryeO/pub?gid=0&single=true&output=csv',
       filterCode: 'TM',
       updateInterval: 10000
     };
 
     let equipmentData = {}, charts = {}, currentFilter = 1440, currentPointSize = 4, lastDataHash = '';
+
+    function changeMachineType() {
+      const selector = document.getElementById('machineSelector');
+      const newType = selector.value;
+      
+      if (newType !== currentMachineType) {
+        currentMachineType = newType;
+        
+        // Limpiar datos y gráficos anteriores
+        equipmentData = {};
+        lastDataHash = '';
+        
+        // Destruir gráficos existentes
+        Object.keys(charts).forEach(eq => {
+          if (charts[eq]) {
+            charts[eq].destroy();
+          }
+        });
+        charts = {};
+        
+        // Limpiar contenedor
+        document.getElementById('equipmentContainer').innerHTML = '<div class="no-data">Cargando...</div>';
+        
+        // Cargar nuevos datos
+        loadData();
+      }
+    }
 
     function generateDataHash(data) {
       const keys = Object.keys(data).sort();
@@ -89,7 +140,8 @@
 
     async function loadData() {
       try {
-        const r = await fetch(CONFIG.csvUrl);
+        const csvUrl = MACHINE_CONFIGS[currentMachineType].csvUrl;
+        const r = await fetch(csvUrl);
         if (!r.ok) throw new Error(`HTTP:${r.status}`);
         processData(await r.text());
         return true;
@@ -124,7 +176,8 @@
       for (let eq in dataByEq) dataByEq[eq].sort((a, b) => a.datetime - b.datetime);
       const newHash = generateDataHash(dataByEq);
       if (newHash !== lastDataHash) {
-        console.log(`✅ ${Object.keys(dataByEq).length} equipos`);
+        const machineName = MACHINE_CONFIGS[currentMachineType].name;
+        console.log(`✅ ${machineName}: ${Object.keys(dataByEq).length} equipos`);
         equipmentData = dataByEq;
         lastDataHash = newHash;
         renderEquipmentCharts();
@@ -180,29 +233,33 @@
       }
       if (data.length === 0) return;
       
-      let avgInt = 0;
-      if (data.length > 1) {
-        let tot = 0;
-        for (let i = 1; i < data.length; i++) tot += (data[i].datetime - data[i - 1].datetime);
-        avgInt = tot / (data.length - 1);
-      }
+      const tco = MACHINE_CONFIGS[currentMachineType].tco;
+      const maxAllowed = tco * 4;
       
-      const avgVal = Math.round(data.reduce((s, d) => s + d.value, 0) / data.length);
+      // Filtrar puntos que exceden TCO x 4
+      const validData = data.filter(d => d.value <= maxAllowed);
+      
+      if (validData.length === 0) return;
+      
+      // Calcular intervalo promedio usando TCO
+      const avgInt = tco * 1000; // TCO en milisegundos
+      
+      const avgVal = Math.round(validData.reduce((s, d) => s + d.value, 0) / validData.length);
       const complete = [];
       let lastRealTime = null;
       
-      for (let i = 0; i < data.length; i++) {
-        const cur = data[i];
+      for (let i = 0; i < validData.length; i++) {
+        const cur = validData[i];
         
         // Verificar si hay gap antes de este punto
-        if (lastRealTime && avgInt > 0) {
+        if (lastRealTime) {
           const gap = cur.datetime - lastRealTime;
           
           if (gap > avgInt * 3) {
-            // Hay gap - rellenar con amarillos
+            // Hay gap - rellenar con amarillos usando TCO
             let pt = new Date(lastRealTime.getTime() + avgInt);
             while (pt < cur.datetime) {
-              complete.push({ x: pt.getTime(), y: avgVal, isProjected: true });
+              complete.push({ x: pt.getTime(), y: tco, isProjected: true });
               pt = new Date(pt.getTime() + avgInt);
             }
             
@@ -221,17 +278,17 @@
         lastRealTime = cur.datetime;
       }
       
-      // Proyecciones hasta ahora
+      // Proyecciones hasta ahora usando TCO
       const now = new Date(), since = now - lastRealTime;
-      if (avgInt > 0 && since > avgInt * 3) {
+      if (since > avgInt * 3) {
         let pt = new Date(lastRealTime.getTime() + avgInt);
         while (pt <= now) {
-          complete.push({ x: pt.getTime(), y: avgVal, isProjected: true });
+          complete.push({ x: pt.getTime(), y: tco, isProjected: true });
           pt = new Date(pt.getTime() + avgInt);
         }
       }
       
-      document.getElementById(`stat-total-${eq}`).textContent = data.length;
+      document.getElementById(`stat-total-${eq}`).textContent = validData.length;
       document.getElementById(`stat-avg-${eq}`).textContent = avgVal;
       
       const colors = complete.map(d => d.isProjected ? '#fbbf24' : '#0066ff');
@@ -257,11 +314,31 @@
       
       const ctx = document.getElementById(`chart-${eq}`).getContext('2d');
       
+      // Calcular rango de tiempo exacto según el filtro (reutilizar 'now' ya declarado)
+      let minTime, maxTime;
+      
+      if (currentFilter !== null) {
+        minTime = new Date(now.getTime() - (currentFilter * 60 * 1000));
+        maxTime = now;
+      } else {
+        // Si no hay filtro, usar el rango de los datos
+        if (complete.length > 0) {
+          const times = complete.map(d => d.x);
+          minTime = new Date(Math.min(...times));
+          maxTime = new Date(Math.max(...times));
+        } else {
+          minTime = new Date(now.getTime() - (1440 * 60 * 1000));
+          maxTime = now;
+        }
+      }
+      
       if (charts[eq]) {
         charts[eq].data.datasets[0].data = complete;
         charts[eq].data.datasets[0].pointBackgroundColor = colors;
         charts[eq].options.scales.x.time.unit = timeUnit;
         charts[eq].options.scales.x.time.stepSize = timeStep;
+        charts[eq].options.scales.x.min = minTime.getTime();
+        charts[eq].options.scales.x.max = maxTime.getTime();
         charts[eq].update('none');
       } else {
         charts[eq] = new Chart(ctx, {
@@ -282,9 +359,25 @@
             plugins: {
               legend: { display: false },
               tooltip: {
-                backgroundColor: 'rgba(0,0,0,0.8)',
-                padding: 10,
+                enabled: true,
+                backgroundColor: 'rgba(0,0,0,0.9)',
+                padding: {
+                  top: Math.max(15, window.innerHeight * 0.015),
+                  bottom: Math.max(15, window.innerHeight * 0.015),
+                  left: Math.max(20, window.innerWidth * 0.01),
+                  right: Math.max(20, window.innerWidth * 0.01)
+                },
+                titleFont: {
+                  size: Math.max(16, window.innerHeight * 0.02),
+                  weight: 'bold'
+                },
+                bodyFont: {
+                  size: Math.max(18, window.innerHeight * 0.022),
+                  weight: 'normal'
+                },
                 displayColors: false,
+                cornerRadius: 8,
+                caretSize: 8,
                 callbacks: {
                   title: i => new Date(i[0].parsed.x).toLocaleString('es-AR'),
                   label: c => {
@@ -297,6 +390,8 @@
             scales: {
               x: {
                 type: 'time',
+                min: minTime.getTime(),
+                max: maxTime.getTime(),
                 time: {
                   unit: timeUnit,
                   stepSize: timeStep,
