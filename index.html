@@ -88,6 +88,24 @@
     let equipmentData = {}, charts = {}, lastDataHash = '';
     let equipmentSettings = {}; // Configuración individual por equipo
 
+    // Convertir fecha a día laboral (6am-6am)
+    function toWorkDay(date) {
+      const d = new Date(date);
+      if (d.getHours() < 6) {
+        // Si es antes de las 6am, pertenece al día laboral anterior
+        d.setDate(d.getDate() - 1);
+      }
+      d.setHours(6, 0, 0, 0);
+      return d;
+    }
+
+    // Obtener inicio y fin de día laboral
+    function getWorkDayBounds(date) {
+      const start = toWorkDay(date);
+      const end = new Date(start.getTime() + (24 * 60 * 60 * 1000)); // +24 horas
+      return { start, end };
+    }
+
     function changeMachineType() {
       const newType = document.getElementById('machineSelector').value;
       if (newType !== currentMachineType) {
@@ -182,7 +200,9 @@
             pointSize: 4,
             dateFrom: null,
             dateTo: null,
-            selection: null
+            selection: null,
+            zoomStart: null,
+            zoomEnd: null
           };
           cont.appendChild(createEquipmentCard(eq));
         }
@@ -247,6 +267,10 @@
             <span>Procesos</span>
           </div>
           <div class="legend-item">
+            <div class="legend-dot" style="background:white; border: 2px solid #0066ff;"></div>
+            <span>Proceso lento</span>
+          </div>
+          <div class="legend-item">
             <div class="legend-dot" style="background:#fbbf24"></div>
             <span>Perdidas</span>
           </div>
@@ -274,8 +298,9 @@
     function updateDateFrom(eq) {
       const val = document.getElementById(`dateFrom-${eq}`).value;
       if (val) {
-        equipmentSettings[eq].dateFrom = new Date(val);
-        equipmentSettings[eq].dateFrom.setHours(0, 0, 0, 0);
+        const selectedDate = new Date(val);
+        const workDay = getWorkDayBounds(selectedDate);
+        equipmentSettings[eq].dateFrom = workDay.start;
         document.getElementById(`dateTo-${eq}`).disabled = false;
       } else {
         equipmentSettings[eq].dateFrom = null;
@@ -289,8 +314,9 @@
     function updateDateTo(eq) {
       const val = document.getElementById(`dateTo-${eq}`).value;
       if (val) {
-        equipmentSettings[eq].dateTo = new Date(val);
-        equipmentSettings[eq].dateTo.setHours(23, 59, 59, 999);
+        const selectedDate = new Date(val);
+        const workDay = getWorkDayBounds(selectedDate);
+        equipmentSettings[eq].dateTo = workDay.end;
       } else {
         equipmentSettings[eq].dateTo = null;
       }
@@ -303,6 +329,8 @@
       document.getElementById(`dateTo-${eq}`).disabled = true;
       equipmentSettings[eq].dateFrom = null;
       equipmentSettings[eq].dateTo = null;
+      equipmentSettings[eq].zoomStart = null;
+      equipmentSettings[eq].zoomEnd = null;
       updateEquipmentChart(eq);
     }
 
@@ -331,34 +359,67 @@
       
       const tco = MACHINE_CONFIGS[currentMachineType].tco;
       const maxAllowed = tco * 4;
-      const validData = data.filter(d => d.value <= maxAllowed);
       
-      if (validData.length === 0) return;
-      
+      // NO filtrar, procesar todos los datos
       const avgInt = tco * 1000;
-      const avgVal = Math.round(validData.reduce((s, d) => s + d.value, 0) / validData.length);
+      const validForAvg = data.filter(d => d.value <= maxAllowed);
+      const avgVal = validForAvg.length > 0 ? Math.round(validForAvg.reduce((s, d) => s + d.value, 0) / validForAvg.length) : tco;
       const complete = [];
       let lastRealTime = null;
       
-      for (let i = 0; i < validData.length; i++) {
-        const cur = validData[i];
+      for (let i = 0; i < data.length; i++) {
+        const cur = data[i];
+        const isOverLimit = cur.value > maxAllowed;
         
         if (lastRealTime) {
           const gap = cur.datetime - lastRealTime;
           
-          if (gap > avgInt * 3) {
+          if (gap > avgInt * 3 || isOverLimit) {
+            // Rellenar gap con amarillos
             let pt = new Date(lastRealTime.getTime() + avgInt);
-            while (pt < cur.datetime) {
-              complete.push({ x: pt.getTime(), y: tco, isProjected: true });
+            const targetTime = cur.datetime;
+            
+            while (pt < targetTime) {
+              complete.push({ x: pt.getTime(), y: tco, isProjected: true, isHollow: false });
               pt = new Date(pt.getTime() + avgInt);
             }
-            const adjustedTime = new Date(pt.getTime() - avgInt + avgInt);
-            complete.push({ x: adjustedTime.getTime(), y: cur.value, isProjected: false });
+            
+            if (isOverLimit) {
+              // Punto sobre límite: círculo azul hueco en altura TCO
+              complete.push({ x: cur.datetime.getTime(), y: tco, isProjected: false, isHollow: true, realValue: cur.value });
+              
+              // Agregar puntos amarillos por el tiempo excedente
+              const extraTime = (cur.value - tco) * 1000;
+              const yellowCount = Math.floor(extraTime / avgInt);
+              
+              for (let j = 1; j <= yellowCount; j++) {
+                const yellowTime = new Date(cur.datetime.getTime() + (j * avgInt));
+                complete.push({ x: yellowTime.getTime(), y: tco, isProjected: true, isHollow: false });
+              }
+            } else {
+              // Punto normal después de gap
+              const adjustedTime = new Date(pt.getTime() - avgInt + avgInt);
+              complete.push({ x: adjustedTime.getTime(), y: cur.value, isProjected: false, isHollow: false });
+            }
           } else {
-            complete.push({ x: cur.datetime.getTime(), y: cur.value, isProjected: false });
+            // Sin gap ni sobre límite
+            complete.push({ x: cur.datetime.getTime(), y: cur.value, isProjected: false, isHollow: false });
           }
         } else {
-          complete.push({ x: cur.datetime.getTime(), y: cur.value, isProjected: false });
+          // Primer punto
+          if (isOverLimit) {
+            complete.push({ x: cur.datetime.getTime(), y: tco, isProjected: false, isHollow: true, realValue: cur.value });
+            
+            const extraTime = (cur.value - tco) * 1000;
+            const yellowCount = Math.floor(extraTime / avgInt);
+            
+            for (let j = 1; j <= yellowCount; j++) {
+              const yellowTime = new Date(cur.datetime.getTime() + (j * avgInt));
+              complete.push({ x: yellowTime.getTime(), y: tco, isProjected: true, isHollow: false });
+            }
+          } else {
+            complete.push({ x: cur.datetime.getTime(), y: cur.value, isProjected: false, isHollow: false });
+          }
         }
         
         lastRealTime = cur.datetime;
@@ -369,15 +430,27 @@
       if (since > avgInt * 3) {
         let pt = new Date(lastRealTime.getTime() + avgInt);
         while (pt <= now) {
-          complete.push({ x: pt.getTime(), y: tco, isProjected: true });
+          complete.push({ x: pt.getTime(), y: tco, isProjected: true, isHollow: false });
           pt = new Date(pt.getTime() + avgInt);
         }
       }
       
-      document.getElementById(`stat-total-${eq}`).textContent = validData.length;
+      // Contar solo puntos válidos (no huecos ni proyectados) para estadísticas
+      const validPoints = complete.filter(d => !d.isProjected && !d.isHollow);
+      document.getElementById(`stat-total-${eq}`).textContent = validPoints.length;
       document.getElementById(`stat-avg-${eq}`).textContent = avgVal;
       
-      const colors = complete.map(d => d.isProjected ? '#fbbf24' : '#0066ff');
+      const colors = complete.map(d => {
+        if (d.isHollow) return 'rgba(0, 102, 255, 0)'; // Transparente para círculos huecos
+        return d.isProjected ? '#fbbf24' : '#0066ff';
+      });
+      
+      const borderColors = complete.map(d => {
+        if (d.isHollow) return '#0066ff'; // Borde azul para círculos huecos
+        return d.isProjected ? '#fbbf24' : '#0066ff';
+      });
+      
+      const borderWidths = complete.map(d => d.isHollow ? 2 : 0);
       
       // Divisiones de tiempo
       let timeUnit = 'hour', timeStep = 1;
@@ -389,7 +462,11 @@
       
       // Límites
       let minTime, maxTime;
-      if (settings.dateFrom || settings.dateTo) {
+      if (settings.zoomStart && settings.zoomEnd) {
+        // Si hay zoom activo, usar esos límites
+        minTime = new Date(settings.zoomStart);
+        maxTime = new Date(settings.zoomEnd);
+      } else if (settings.dateFrom || settings.dateTo) {
         minTime = settings.dateFrom || new Date(settings.dateTo.getTime() - (30 * 24 * 60 * 60 * 1000));
         maxTime = settings.dateTo || new Date(settings.dateFrom.getTime() + (30 * 24 * 60 * 60 * 1000));
       } else {
@@ -402,6 +479,8 @@
       if (charts[eq]) {
         charts[eq].data.datasets[0].data = complete;
         charts[eq].data.datasets[0].pointBackgroundColor = colors;
+        charts[eq].data.datasets[0].pointBorderColor = borderColors;
+        charts[eq].data.datasets[0].pointBorderWidth = borderWidths;
         charts[eq].options.scales.x.time.unit = timeUnit;
         charts[eq].options.scales.x.time.stepSize = timeStep;
         charts[eq].options.scales.x.min = minTime.getTime();
@@ -415,7 +494,8 @@
               data: complete,
               pointRadius: settings.pointSize,
               pointBackgroundColor: colors,
-              pointBorderWidth: 0,
+              pointBorderColor: borderColors,
+              pointBorderWidth: borderWidths,
               showLine: false
             }]
           },
@@ -442,6 +522,10 @@
                 callbacks: {
                   title: i => new Date(i[0].parsed.x).toLocaleString('es-AR'),
                   label: c => {
+                    const point = complete[c.dataIndex];
+                    if (point.isHollow) {
+                      return `🔵 Proceso lento: ${point.realValue} seg (excede TCO)`;
+                    }
                     const p = c.dataset.pointBackgroundColor[c.dataIndex] === '#fbbf24';
                     return (p ? '⚠️ Perdida: ' : 'Tiempo: ') + c.parsed.y + ' seg';
                   }
@@ -559,7 +643,13 @@
       
       document.getElementById(`summary-${eq}`).innerHTML = `
         <div class="summary-panel">
-          <h4>📊 Resumen de Selección</h4>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <h4 style="margin: 0;">📊 Resumen de Selección</h4>
+            <div style="display: flex; gap: 8px;">
+              <button onclick="zoomToSelection('${eq}', ${x1}, ${x2})" style="padding: 4px 12px; background: #0066ff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">🔍 Zoom</button>
+              <button onclick="resetZoom('${eq}')" style="padding: 4px 12px; background: #666; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">↺ Reset</button>
+            </div>
+          </div>
           <div class="summary-stats">
             <div class="summary-stat">
               <div class="summary-stat-label">Período</div>
@@ -584,6 +674,19 @@
           </div>
         </div>
       `;
+    }
+
+    function zoomToSelection(eq, x1, x2) {
+      equipmentSettings[eq].zoomStart = x1;
+      equipmentSettings[eq].zoomEnd = x2;
+      updateEquipmentChart(eq);
+    }
+
+    function resetZoom(eq) {
+      equipmentSettings[eq].zoomStart = null;
+      equipmentSettings[eq].zoomEnd = null;
+      document.getElementById(`summary-${eq}`).innerHTML = '';
+      updateEquipmentChart(eq);
     }
 
     setInterval(() => loadData(), CONFIG.updateInterval);
