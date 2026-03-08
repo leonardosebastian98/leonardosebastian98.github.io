@@ -9,145 +9,108 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8f9fa; padding: 20px; }
-    .container { max-width: 1600px; margin: 0 auto; }
-    .header { background: white; border-radius: 12px; padding: 30px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .header h1 { font-size: 2em; color: #1a1a1a; margin-bottom: 5px; }
+    .container { max-width: 1800px; margin: 0 auto; }
+    .header { background: white; border-radius: 12px; padding: 30px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
+    .header h1 { font-size: 2em; color: #1a1a1a; }
     .header .subtitle { color: #666; font-size: 0.95em; }
-    .controls-global { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
-    .time-filters { display: flex; gap: 8px; background: #f8f9fa; padding: 4px; border-radius: 8px; }
-    .time-btn { padding: 8px 16px; border: none; background: transparent; color: #666; font-size: 0.9em; font-weight: 500; cursor: pointer; border-radius: 6px; transition: all 0.2s; }
-    .time-btn:hover { background: #e9ecef; color: #1a1a1a; }
-    .time-btn.active { background: #0066ff; color: white; }
-    .point-size-control { display: flex; align-items: center; gap: 10px; }
-    .point-size-control label { color: #666; font-size: 0.9em; }
-    .refresh-btn { padding: 8px 16px; background: #0066ff; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9em; font-weight: 500; transition: all 0.2s; }
-    .refresh-btn:hover { background: #0052cc; }
+    .machine-selector { display: flex; align-items: center; gap: 10px; }
+    .machine-selector label { color: #666; font-weight: 500; }
+    .machine-selector select { padding: 8px 12px; border: 2px solid #e9ecef; border-radius: 6px; font-size: 0.9em; cursor: pointer; background: white; }
     .equipment-card { background: white; border-radius: 12px; padding: 25px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
     .equipment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 2px solid #f0f0f0; }
     .equipment-title { font-size: 1.4em; font-weight: 600; color: #1a1a1a; }
-    .equipment-stats { display: flex; gap: 20px; font-size: 0.9em; color: #666; }
+    .equipment-stats { display: flex; gap: 20px; font-size: 0.9em; }
     .stat-item { display: flex; flex-direction: column; align-items: center; }
     .stat-value { font-size: 1.3em; font-weight: 600; color: #0066ff; }
     .stat-label { font-size: 0.85em; color: #999; }
-    .chart-wrapper { position: relative; height: 350px; }
+    .chart-controls { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px; }
+    .control-group { display: flex; align-items: center; gap: 10px; }
+    .control-group label { color: #666; font-size: 0.85em; font-weight: 500; white-space: nowrap; }
+    .time-filters { display: flex; gap: 5px; }
+    .time-btn { padding: 6px 12px; border: none; background: white; color: #666; font-size: 0.85em; font-weight: 500; cursor: pointer; border-radius: 4px; transition: all 0.2s; }
+    .time-btn:hover { background: #e9ecef; }
+    .time-btn.active { background: #0066ff; color: white; }
+    .date-inputs { display: flex; align-items: center; gap: 8px; }
+    .date-inputs input { padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85em; }
+    .date-inputs input:disabled { background: #f5f5f5; cursor: not-allowed; }
+    .btn-clear { padding: 4px 10px; background: #e9ecef; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em; color: #666; }
+    .btn-clear:hover { background: #dee2e6; }
+    .btn-refresh { padding: 6px 12px; background: #0066ff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em; font-weight: 500; }
+    .btn-refresh:hover { background: #0052cc; }
+    .chart-wrapper { position: relative; height: 400px; cursor: crosshair; }
+    .selection-box { position: absolute; border: 2px dashed #0066ff; background: rgba(0, 102, 255, 0.1); pointer-events: none; z-index: 10; }
+    .summary-panel { margin-top: 10px; padding: 12px; background: #f0f9ff; border-left: 4px solid #0066ff; border-radius: 4px; }
+    .summary-panel h4 { color: #0066ff; margin-bottom: 8px; font-size: 0.9em; }
+    .summary-stats { display: flex; gap: 15px; flex-wrap: wrap; }
+    .summary-stat { display: flex; flex-direction: column; }
+    .summary-stat-label { font-size: 0.75em; color: #666; }
+    .summary-stat-value { font-size: 1em; font-weight: 600; color: #1a1a1a; }
     .chart-legend { display: flex; gap: 20px; justify-content: center; margin-top: 15px; padding-top: 15px; border-top: 1px solid #e9ecef; font-size: 0.85em; }
     .legend-item { display: flex; align-items: center; gap: 5px; }
     .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
     .no-data { text-align: center; padding: 40px; color: #999; font-style: italic; }
-    .pulse { width: 8px; height: 8px; background: #10b981; border-radius: 50%; animation: pulse 2s infinite; }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-    .update-info { display: flex; align-items: center; gap: 8px; font-size: 0.85em; color: #999; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-        <div>
-          <h1>📊 Monitor Multi-Equipo - TM</h1>
-          <div class="subtitle">Escala de tiempo real optimizada</div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <label style="color: #666; font-weight: 500;">Máquinas:</label>
-          <select id="machineSelector" onchange="changeMachineType()" style="padding: 8px 12px; border: 2px solid #e9ecef; border-radius: 6px; font-size: 0.9em; cursor: pointer; background: white;">
-            <option value="armadoras">Armadoras</option>
-            <option value="expansoras">Expansoras</option>
-          </select>
-        </div>
+      <div>
+        <h1>📊 Monitor Multi-Equipo - TM</h1>
+        <div class="subtitle">Controles individuales por equipo</div>
       </div>
-    </div>
-    <div class="controls-global">
-      <div class="point-size-control">
-        <label>Tamaño:</label>
-        <input type="range" id="globalPointSize" min="1" max="10" value="4" style="width:100px" oninput="updateAllPointSizes(this.value)">
-        <span id="globalPointSizeValue">4px</span>
-      </div>
-      <div class="time-filters">
-        <button class="time-btn" onclick="filterAllTime(60)">1H</button>
-        <button class="time-btn" onclick="filterAllTime(360)">6H</button>
-        <button class="time-btn" onclick="filterAllTime(720)">12H</button>
-        <button class="time-btn active" onclick="filterAllTime(1440)">24H</button>
-        <button class="time-btn" onclick="filterAllTime(10080)">SEMANA</button>
-      </div>
-      <div style="display:flex;align-items:center;gap:15px">
-        <div class="update-info"><div class="pulse"></div><span id="globalUpdate">...</span></div>
-        <button class="refresh-btn" onclick="refreshAllData()">↻ Actualizar</button>
+      <div class="machine-selector">
+        <label>Máquinas:</label>
+        <select id="machineSelector" onchange="changeMachineType()">
+          <option value="armadoras">Armadoras</option>
+          <option value="expansoras">Expansoras</option>
+        </select>
       </div>
     </div>
     <div id="equipmentContainer"></div>
   </div>
+
   <script>
     const MACHINE_CONFIGS = {
       armadoras: {
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQVrHs_GXmZGUMaOBjo4zr6mtNbFpf45WZ916Bj6LktK0i1F1gofWV_dnZfjam7MAbhDoQap_nZryeO/pub?gid=0&single=true&output=csv',
         name: 'Armadoras',
-        tco: 240 // Tiempo de Ciclo Óptimo en segundos
+        tco: 240
       },
       expansoras: {
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRkBYlgzc71g76k03IhGUA29lNMKjJl1rgB9WwzXcxT4uHgvzsySXs5tAuQHqQKglMLFgao6u4enqPC/pub?gid=0&single=true&output=csv',
         name: 'Expansoras',
-        tco: 35 // Tiempo de Ciclo Óptimo en segundos
+        tco: 35
       }
     };
 
     let currentMachineType = 'armadoras';
-    const CONFIG = {
-      filterCode: 'TM',
-      updateInterval: 10000
-    };
-
-    let equipmentData = {}, charts = {}, currentFilter = 1440, currentPointSize = 4, lastDataHash = '';
+    const CONFIG = { filterCode: 'TM', updateInterval: 10000 };
+    let equipmentData = {}, charts = {}, lastDataHash = '';
+    let equipmentSettings = {}; // Configuración individual por equipo
 
     function changeMachineType() {
-      const selector = document.getElementById('machineSelector');
-      const newType = selector.value;
-      
+      const newType = document.getElementById('machineSelector').value;
       if (newType !== currentMachineType) {
         currentMachineType = newType;
-        
-        // Limpiar datos y gráficos anteriores
         equipmentData = {};
         lastDataHash = '';
-        
-        // Destruir gráficos existentes
-        Object.keys(charts).forEach(eq => {
-          if (charts[eq]) {
-            charts[eq].destroy();
-          }
-        });
+        Object.keys(charts).forEach(eq => charts[eq]?.destroy());
         charts = {};
-        
-        // Limpiar contenedor
+        equipmentSettings = {};
         document.getElementById('equipmentContainer').innerHTML = '<div class="no-data">Cargando...</div>';
-        
-        // Cargar nuevos datos
         loadData();
       }
     }
 
-    function generateDataHash(data) {
-      const keys = Object.keys(data).sort();
-      let h = '';
-      keys.forEach(e => {
-        const d = data[e];
-        if (d.length > 0) {
-          const l = d[d.length - 1];
-          h += `${e}-${d.length}-${l.datetime.getTime()}-${l.value}|`;
-        }
-      });
-      return h;
-    }
-
     async function loadData() {
       try {
-        const csvUrl = MACHINE_CONFIGS[currentMachineType].csvUrl;
-        const r = await fetch(csvUrl);
+        const r = await fetch(MACHINE_CONFIGS[currentMachineType].csvUrl);
         if (!r.ok) throw new Error(`HTTP:${r.status}`);
         processData(await r.text());
         return true;
       } catch (e) {
         console.error('❌', e);
-        showError(`Error:${e.message}`);
+        document.getElementById('equipmentContainer').innerHTML = `<div class="no-data">❌ Error: ${e.message}</div>`;
         return false;
       }
     }
@@ -176,13 +139,10 @@
       for (let eq in dataByEq) dataByEq[eq].sort((a, b) => a.datetime - b.datetime);
       const newHash = generateDataHash(dataByEq);
       if (newHash !== lastDataHash) {
-        const machineName = MACHINE_CONFIGS[currentMachineType].name;
-        console.log(`✅ ${machineName}: ${Object.keys(dataByEq).length} equipos`);
         equipmentData = dataByEq;
         lastDataHash = newHash;
         renderEquipmentCharts();
-      } else console.log('ℹ️ Sin cambios');
-      updateGlobalTimestamp();
+      }
     }
 
     function parseDateTime(d, t) {
@@ -192,9 +152,20 @@
         if (year < 100) year = year < 50 ? 2000 + year : 1900 + year;
         const tp = t.split(':'), h = parseInt(tp[0]) || 0, m = parseInt(tp[1]) || 0, s = parseInt(tp[2]) || 0;
         return new Date(year, mon - 1, day, h, m, s);
-      } catch {
-        return null;
-      }
+      } catch { return null; }
+    }
+
+    function generateDataHash(data) {
+      const keys = Object.keys(data).sort();
+      let h = '';
+      keys.forEach(e => {
+        const d = data[e];
+        if (d.length > 0) {
+          const l = d[d.length - 1];
+          h += `${e}-${d.length}-${l.datetime.getTime()}-${l.value}|`;
+        }
+      });
+      return h;
     }
 
     function renderEquipmentCharts() {
@@ -204,16 +175,18 @@
         return;
       }
       eqs.forEach(eq => {
-        if (!document.getElementById(`equipment-${eq}`)) cont.appendChild(createEquipmentCard(eq));
-        updateEquipmentChart(eq);
-      });
-      const cards = cont.querySelectorAll('.equipment-card');
-      cards.forEach(card => {
-        const id = card.id.replace('equipment-', '');
-        if (!eqs.includes(id)) {
-          card.remove();
-          delete charts[id];
+        if (!document.getElementById(`equipment-${eq}`)) {
+          // Inicializar configuración del equipo
+          equipmentSettings[eq] = {
+            filter: 1440,
+            pointSize: 4,
+            dateFrom: null,
+            dateTo: null,
+            selection: null
+          };
+          cont.appendChild(createEquipmentCard(eq));
         }
+        updateEquipmentChart(eq);
       });
     }
 
@@ -221,29 +194,148 @@
       const card = document.createElement('div');
       card.className = 'equipment-card';
       card.id = `equipment-${eq}`;
-      card.innerHTML = `<div class="equipment-header"><div class="equipment-title">Equipo ${eq}</div><div class="equipment-stats"><div class="stat-item"><div class="stat-value" id="stat-total-${eq}">0</div><div class="stat-label">Procesos</div></div><div class="stat-item"><div class="stat-value" id="stat-avg-${eq}">0</div><div class="stat-label">Promedio (s)</div></div></div></div><div class="chart-wrapper"><canvas id="chart-${eq}"></canvas></div><div class="chart-legend"><div class="legend-item"><div class="legend-dot" style="background:#0066ff"></div><span>Procesos</span></div><div class="legend-item"><div class="legend-dot" style="background:#fbbf24"></div><span>Perdidas</span></div></div>`;
+      card.innerHTML = `
+        <div class="equipment-header">
+          <div class="equipment-title">Equipo ${eq}</div>
+          <div class="equipment-stats">
+            <div class="stat-item">
+              <div class="stat-value" id="stat-total-${eq}">0</div>
+              <div class="stat-label">Procesos</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value" id="stat-avg-${eq}">0</div>
+              <div class="stat-label">Promedio (s)</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="chart-controls">
+          <div class="control-group">
+            <label>Tamaño:</label>
+            <input type="range" min="1" max="10" value="4" style="width:80px" oninput="updatePointSize('${eq}', this.value)">
+            <span id="size-${eq}">4px</span>
+          </div>
+          
+          <div class="time-filters">
+            <button class="time-btn" onclick="setTimeFilter('${eq}', 60)">1H</button>
+            <button class="time-btn" onclick="setTimeFilter('${eq}', 360)">6H</button>
+            <button class="time-btn" onclick="setTimeFilter('${eq}', 720)">12H</button>
+            <button class="time-btn active" onclick="setTimeFilter('${eq}', 1440)">24H</button>
+            <button class="time-btn" onclick="setTimeFilter('${eq}', 10080)">SEMANA</button>
+          </div>
+          
+          <div class="date-inputs">
+            <label>Desde:</label>
+            <input type="date" id="dateFrom-${eq}" onchange="updateDateFrom('${eq}')">
+            <label>Hasta:</label>
+            <input type="date" id="dateTo-${eq}" disabled onchange="updateDateTo('${eq}')">
+            <button class="btn-clear" onclick="clearDates('${eq}')">Limpiar</button>
+          </div>
+          
+          <button class="btn-refresh" onclick="updateEquipmentChart('${eq}')">↻</button>
+        </div>
+        
+        <div class="chart-wrapper" id="wrapper-${eq}">
+          <canvas id="chart-${eq}"></canvas>
+        </div>
+        
+        <div id="summary-${eq}"></div>
+        
+        <div class="chart-legend">
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#0066ff"></div>
+            <span>Procesos</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#fbbf24"></div>
+            <span>Perdidas</span>
+          </div>
+        </div>
+      `;
       return card;
     }
 
+    function updatePointSize(eq, size) {
+      equipmentSettings[eq].pointSize = parseInt(size);
+      document.getElementById(`size-${eq}`).textContent = size + 'px';
+      if (charts[eq]) {
+        charts[eq].data.datasets[0].pointRadius = parseInt(size);
+        charts[eq].update('none');
+      }
+    }
+
+    function setTimeFilter(eq, minutes) {
+      equipmentSettings[eq].filter = minutes;
+      document.querySelectorAll(`#equipment-${eq} .time-btn`).forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      updateEquipmentChart(eq);
+    }
+
+    function updateDateFrom(eq) {
+      const val = document.getElementById(`dateFrom-${eq}`).value;
+      if (val) {
+        equipmentSettings[eq].dateFrom = new Date(val);
+        equipmentSettings[eq].dateFrom.setHours(0, 0, 0, 0);
+        document.getElementById(`dateTo-${eq}`).disabled = false;
+      } else {
+        equipmentSettings[eq].dateFrom = null;
+        document.getElementById(`dateTo-${eq}`).disabled = true;
+        document.getElementById(`dateTo-${eq}`).value = '';
+        equipmentSettings[eq].dateTo = null;
+      }
+      updateEquipmentChart(eq);
+    }
+
+    function updateDateTo(eq) {
+      const val = document.getElementById(`dateTo-${eq}`).value;
+      if (val) {
+        equipmentSettings[eq].dateTo = new Date(val);
+        equipmentSettings[eq].dateTo.setHours(23, 59, 59, 999);
+      } else {
+        equipmentSettings[eq].dateTo = null;
+      }
+      updateEquipmentChart(eq);
+    }
+
+    function clearDates(eq) {
+      document.getElementById(`dateFrom-${eq}`).value = '';
+      document.getElementById(`dateTo-${eq}`).value = '';
+      document.getElementById(`dateTo-${eq}`).disabled = true;
+      equipmentSettings[eq].dateFrom = null;
+      equipmentSettings[eq].dateTo = null;
+      updateEquipmentChart(eq);
+    }
+
     function updateEquipmentChart(eq) {
+      const settings = equipmentSettings[eq];
       let data = equipmentData[eq] || [];
-      if (currentFilter !== null && data.length > 0) {
-        const now = new Date(), cutoff = new Date(now.getTime() - (currentFilter * 60 * 1000));
+      
+      // Filtrar por tiempo o fechas
+      if (settings.dateFrom || settings.dateTo) {
+        data = data.filter(d => {
+          if (settings.dateFrom && settings.dateTo) {
+            return d.datetime >= settings.dateFrom && d.datetime <= settings.dateTo;
+          } else if (settings.dateFrom) {
+            return d.datetime >= settings.dateFrom;
+          } else if (settings.dateTo) {
+            return d.datetime <= settings.dateTo;
+          }
+          return true;
+        });
+      } else if (settings.filter) {
+        const now = new Date(), cutoff = new Date(now.getTime() - (settings.filter * 60 * 1000));
         data = data.filter(d => d.datetime >= cutoff);
       }
+      
       if (data.length === 0) return;
       
       const tco = MACHINE_CONFIGS[currentMachineType].tco;
       const maxAllowed = tco * 4;
-      
-      // Filtrar puntos que exceden TCO x 4
       const validData = data.filter(d => d.value <= maxAllowed);
       
       if (validData.length === 0) return;
       
-      // Calcular intervalo promedio usando TCO
-      const avgInt = tco * 1000; // TCO en milisegundos
-      
+      const avgInt = tco * 1000;
       const avgVal = Math.round(validData.reduce((s, d) => s + d.value, 0) / validData.length);
       const complete = [];
       let lastRealTime = null;
@@ -251,34 +343,28 @@
       for (let i = 0; i < validData.length; i++) {
         const cur = validData[i];
         
-        // Verificar si hay gap antes de este punto
         if (lastRealTime) {
           const gap = cur.datetime - lastRealTime;
           
           if (gap > avgInt * 3) {
-            // Hay gap - rellenar con amarillos usando TCO
             let pt = new Date(lastRealTime.getTime() + avgInt);
             while (pt < cur.datetime) {
               complete.push({ x: pt.getTime(), y: tco, isProjected: true });
               pt = new Date(pt.getTime() + avgInt);
             }
-            
-            // El punto actual (azul) se coloca en el promedio desde el último amarillo
             const adjustedTime = new Date(pt.getTime() - avgInt + avgInt);
             complete.push({ x: adjustedTime.getTime(), y: cur.value, isProjected: false });
           } else {
-            // No hay gap - punto azul en su tiempo real
             complete.push({ x: cur.datetime.getTime(), y: cur.value, isProjected: false });
           }
         } else {
-          // Primer punto - siempre en tiempo real
           complete.push({ x: cur.datetime.getTime(), y: cur.value, isProjected: false });
         }
         
         lastRealTime = cur.datetime;
       }
       
-      // Proyecciones hasta ahora usando TCO
+      // Proyecciones
       const now = new Date(), since = now - lastRealTime;
       if (since > avgInt * 3) {
         let pt = new Date(lastRealTime.getTime() + avgInt);
@@ -293,44 +379,25 @@
       
       const colors = complete.map(d => d.isProjected ? '#fbbf24' : '#0066ff');
       
-      // Configurar divisiones según filtro
+      // Divisiones de tiempo
       let timeUnit = 'hour', timeStep = 1;
-      if (currentFilter === 60) {
-        timeUnit = 'minute';
-        timeStep = 5;
-      } else if (currentFilter === 360) {
-        timeUnit = 'minute';
-        timeStep = 15;
-      } else if (currentFilter === 720) {
-        timeUnit = 'minute';
-        timeStep = 30;
-      } else if (currentFilter === 1440) {
-        timeUnit = 'hour';
-        timeStep = 1;
-      } else if (currentFilter === 10080) {
-        timeUnit = 'day';
-        timeStep = 1;
+      if (settings.filter === 60) { timeUnit = 'minute'; timeStep = 5; }
+      else if (settings.filter === 360) { timeUnit = 'minute'; timeStep = 15; }
+      else if (settings.filter === 720) { timeUnit = 'minute'; timeStep = 30; }
+      else if (settings.filter === 1440) { timeUnit = 'hour'; timeStep = 1; }
+      else if (settings.filter === 10080) { timeUnit = 'day'; timeStep = 1; }
+      
+      // Límites
+      let minTime, maxTime;
+      if (settings.dateFrom || settings.dateTo) {
+        minTime = settings.dateFrom || new Date(settings.dateTo.getTime() - (30 * 24 * 60 * 60 * 1000));
+        maxTime = settings.dateTo || new Date(settings.dateFrom.getTime() + (30 * 24 * 60 * 60 * 1000));
+      } else {
+        minTime = new Date(now.getTime() - (settings.filter * 60 * 1000));
+        maxTime = now;
       }
       
       const ctx = document.getElementById(`chart-${eq}`).getContext('2d');
-      
-      // Calcular rango de tiempo exacto según el filtro (reutilizar 'now' ya declarado)
-      let minTime, maxTime;
-      
-      if (currentFilter !== null) {
-        minTime = new Date(now.getTime() - (currentFilter * 60 * 1000));
-        maxTime = now;
-      } else {
-        // Si no hay filtro, usar el rango de los datos
-        if (complete.length > 0) {
-          const times = complete.map(d => d.x);
-          minTime = new Date(Math.min(...times));
-          maxTime = new Date(Math.max(...times));
-        } else {
-          minTime = new Date(now.getTime() - (1440 * 60 * 1000));
-          maxTime = now;
-        }
-      }
       
       if (charts[eq]) {
         charts[eq].data.datasets[0].data = complete;
@@ -346,7 +413,7 @@
           data: {
             datasets: [{
               data: complete,
-              pointRadius: currentPointSize,
+              pointRadius: settings.pointSize,
               pointBackgroundColor: colors,
               pointBorderWidth: 0,
               showLine: false
@@ -367,14 +434,8 @@
                   left: Math.max(20, window.innerWidth * 0.01),
                   right: Math.max(20, window.innerWidth * 0.01)
                 },
-                titleFont: {
-                  size: Math.max(16, window.innerHeight * 0.02),
-                  weight: 'bold'
-                },
-                bodyFont: {
-                  size: Math.max(18, window.innerHeight * 0.022),
-                  weight: 'normal'
-                },
+                titleFont: { size: Math.max(16, window.innerHeight * 0.02), weight: 'bold' },
+                bodyFont: { size: Math.max(18, window.innerHeight * 0.022) },
                 displayColors: false,
                 cornerRadius: 8,
                 caretSize: 8,
@@ -395,18 +456,10 @@
                 time: {
                   unit: timeUnit,
                   stepSize: timeStep,
-                  displayFormats: {
-                    hour: 'HH:mm',
-                    minute: 'HH:mm',
-                    day: 'dd/MM'
-                  }
+                  displayFormats: { hour: 'HH:mm', minute: 'HH:mm', day: 'dd/MM' }
                 },
                 grid: { color: 'rgba(0,0,0,0.05)' },
-                ticks: {
-                  color: '#666',
-                  maxRotation: 0,
-                  autoSkip: false
-                }
+                ticks: { color: '#666', maxRotation: 0, autoSkip: false }
               },
               y: {
                 beginAtZero: true,
@@ -416,42 +469,121 @@
             }
           }
         });
+        
+        // Agregar drag-select
+        setupDragSelect(eq);
       }
     }
 
-    function filterAllTime(min) {
-      currentFilter = min;
-      document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
-      event.target.classList.add('active');
-      Object.keys(equipmentData).forEach(eq => updateEquipmentChart(eq));
-    }
-
-    function updateAllPointSizes(s) {
-      currentPointSize = parseInt(s);
-      document.getElementById('globalPointSizeValue').textContent = s + 'px';
-      Object.keys(charts).forEach(eq => {
-        if (charts[eq]) {
-          charts[eq].data.datasets[0].pointRadius = currentPointSize;
-          charts[eq].update('none');
-        }
+    function setupDragSelect(eq) {
+      const wrapper = document.getElementById(`wrapper-${eq}`);
+      const canvas = document.getElementById(`chart-${eq}`);
+      let isDragging = false, startX, startY, selectionBox;
+      
+      wrapper.addEventListener('mousedown', (e) => {
+        if (e.target !== canvas) return;
+        isDragging = true;
+        const rect = canvas.getBoundingClientRect();
+        startX = e.clientX - rect.left;
+        startY = e.clientY - rect.top;
+        
+        selectionBox = document.createElement('div');
+        selectionBox.className = 'selection-box';
+        selectionBox.style.left = startX + 'px';
+        selectionBox.style.top = startY + 'px';
+        wrapper.appendChild(selectionBox);
+      });
+      
+      wrapper.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const rect = canvas.getBoundingClientRect();
+        const currentX = e.clientX - rect.left;
+        const currentY = e.clientY - rect.top;
+        
+        const width = Math.abs(currentX - startX);
+        const height = Math.abs(currentY - startY);
+        const left = Math.min(currentX, startX);
+        const top = Math.min(currentY, startY);
+        
+        selectionBox.style.left = left + 'px';
+        selectionBox.style.top = top + 'px';
+        selectionBox.style.width = width + 'px';
+        selectionBox.style.height = height + 'px';
+      });
+      
+      wrapper.addEventListener('mouseup', (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        
+        const rect = canvas.getBoundingClientRect();
+        const endX = e.clientX - rect.left;
+        const endY = e.clientY - rect.top;
+        
+        if (selectionBox) selectionBox.remove();
+        
+        // Calcular área seleccionada
+        const chart = charts[eq];
+        const xScale = chart.scales.x;
+        const yScale = chart.scales.y;
+        
+        const x1 = xScale.getValueForPixel(Math.min(startX, endX));
+        const x2 = xScale.getValueForPixel(Math.max(startX, endX));
+        const y1 = yScale.getValueForPixel(Math.max(startY, endY));
+        const y2 = yScale.getValueForPixel(Math.min(startY, endY));
+        
+        showSummary(eq, x1, x2, y1, y2);
       });
     }
 
-    async function refreshAllData() {
-      const btn = event.target;
-      btn.disabled = true;
-      btn.innerHTML = '↻ ...';
-      await loadData();
-      btn.disabled = false;
-      btn.innerHTML = '↻ Actualizar';
-    }
-
-    function updateGlobalTimestamp() {
-      document.getElementById('globalUpdate').textContent = `Última: ${new Date().toLocaleTimeString('es-AR')}`;
-    }
-
-    function showError(m) {
-      document.getElementById('equipmentContainer').innerHTML = `<div class="equipment-card"><div class="no-data">❌ ${m}</div></div>`;
+    function showSummary(eq, x1, x2, y1, y2) {
+      const chart = charts[eq];
+      const data = chart.data.datasets[0].data;
+      
+      const selected = data.filter(d => {
+        return d.x >= x1 && d.x <= x2 && d.y >= y1 && d.y <= y2 && !d.isProjected;
+      });
+      
+      if (selected.length === 0) {
+        document.getElementById(`summary-${eq}`).innerHTML = '';
+        return;
+      }
+      
+      const values = selected.map(d => d.y);
+      const avg = (values.reduce((a, b) => a + b, 0) / values.length).toFixed(1);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const total = selected.length;
+      
+      const startDate = new Date(x1).toLocaleString('es-AR');
+      const endDate = new Date(x2).toLocaleString('es-AR');
+      
+      document.getElementById(`summary-${eq}`).innerHTML = `
+        <div class="summary-panel">
+          <h4>📊 Resumen de Selección</h4>
+          <div class="summary-stats">
+            <div class="summary-stat">
+              <div class="summary-stat-label">Período</div>
+              <div class="summary-stat-value">${startDate} - ${endDate}</div>
+            </div>
+            <div class="summary-stat">
+              <div class="summary-stat-label">Procesos</div>
+              <div class="summary-stat-value">${total}</div>
+            </div>
+            <div class="summary-stat">
+              <div class="summary-stat-label">Promedio</div>
+              <div class="summary-stat-value">${avg}s</div>
+            </div>
+            <div class="summary-stat">
+              <div class="summary-stat-label">Mínimo</div>
+              <div class="summary-stat-value">${min}s</div>
+            </div>
+            <div class="summary-stat">
+              <div class="summary-stat-label">Máximo</div>
+              <div class="summary-stat-value">${max}s</div>
+            </div>
+          </div>
+        </div>
+      `;
     }
 
     setInterval(() => loadData(), CONFIG.updateInterval);
