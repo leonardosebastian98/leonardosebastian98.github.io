@@ -8,44 +8,193 @@
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8f9fa; padding: 20px; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+      background: #f8f9fa; 
+      padding: 20px; 
+      transition: background 0.3s, color 0.3s; 
+    }
+    body.dark { background: #1a1a1a; color: #e0e0e0; }
     .container { max-width: 1800px; margin: 0 auto; }
-    .header { background: white; border-radius: 12px; padding: 30px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
+    .header { 
+      background: white; 
+      border-radius: 12px; 
+      padding: 30px; 
+      margin-bottom: 20px; 
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      flex-wrap: wrap; 
+      gap: 15px; 
+    }
+    body.dark .header { background: #2d2d2d; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
     .header h1 { font-size: 2em; color: #1a1a1a; }
+    body.dark .header h1 { color: #e0e0e0; }
     .header .subtitle { color: #666; font-size: 0.95em; }
+    body.dark .header .subtitle { color: #999; }
+    .header-controls { display: flex; gap: 15px; align-items: center; }
+    .theme-toggle { 
+      padding: 8px 12px; 
+      background: #f0f0f0; 
+      border: none; 
+      border-radius: 6px; 
+      cursor: pointer; 
+      font-size: 1.2em; 
+      transition: all 0.3s; 
+    }
+    body.dark .theme-toggle { background: #3d3d3d; }
+    .theme-toggle:hover { background: #e0e0e0; transform: scale(1.1); }
+    body.dark .theme-toggle:hover { background: #4d4d4d; }
     .machine-selector { display: flex; align-items: center; gap: 10px; }
     .machine-selector label { color: #666; font-weight: 500; }
-    .machine-selector select { padding: 8px 12px; border: 2px solid #e9ecef; border-radius: 6px; font-size: 0.9em; cursor: pointer; background: white; }
-    .equipment-card { background: white; border-radius: 12px; padding: 25px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .equipment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 2px solid #f0f0f0; }
+    body.dark .machine-selector label { color: #999; }
+    .machine-selector select { 
+      padding: 8px 12px; 
+      border: 2px solid #e9ecef; 
+      border-radius: 6px; 
+      font-size: 0.9em; 
+      cursor: pointer; 
+      background: white; 
+    }
+    body.dark .machine-selector select { background: #3d3d3d; border-color: #555; color: #e0e0e0; }
+    .equipment-card { 
+      background: white; 
+      border-radius: 12px; 
+      padding: 25px; 
+      margin-bottom: 20px; 
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+    }
+    body.dark .equipment-card { background: #2d2d2d; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+    .equipment-header { 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      margin-bottom: 15px; 
+      padding-bottom: 15px; 
+      border-bottom: 2px solid #f0f0f0; 
+    }
+    body.dark .equipment-header { border-bottom-color: #444; }
     .equipment-title { font-size: 1.4em; font-weight: 600; color: #1a1a1a; }
+    body.dark .equipment-title { color: #e0e0e0; }
     .equipment-stats { display: flex; gap: 20px; font-size: 0.9em; }
     .stat-item { display: flex; flex-direction: column; align-items: center; }
     .stat-value { font-size: 1.3em; font-weight: 600; color: #0066ff; }
     .stat-label { font-size: 0.85em; color: #999; }
-    .chart-controls { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px; }
+    body.dark .stat-label { color: #aaa; }
+    .chart-controls { 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      flex-wrap: wrap; 
+      gap: 15px; 
+      margin-bottom: 15px; 
+      padding: 15px; 
+      background: #f8f9fa; 
+      border-radius: 8px; 
+    }
+    body.dark .chart-controls { background: #252525; }
     .control-group { display: flex; align-items: center; gap: 10px; }
     .control-group label { color: #666; font-size: 0.85em; font-weight: 500; white-space: nowrap; }
+    body.dark .control-group label { color: #999; }
     .time-filters { display: flex; gap: 5px; }
-    .time-btn { padding: 6px 12px; border: none; background: white; color: #666; font-size: 0.85em; font-weight: 500; cursor: pointer; border-radius: 4px; transition: all 0.2s; }
+    .time-btn { 
+      padding: 6px 12px; 
+      border: none; 
+      background: white; 
+      color: #666; 
+      font-size: 0.85em; 
+      font-weight: 500; 
+      cursor: pointer; 
+      border-radius: 4px; 
+      transition: all 0.2s; 
+    }
+    body.dark .time-btn { background: #3d3d3d; color: #aaa; }
     .time-btn:hover { background: #e9ecef; }
+    body.dark .time-btn:hover { background: #4d4d4d; }
     .time-btn.active { background: #0066ff; color: white; }
     .date-inputs { display: flex; align-items: center; gap: 8px; }
-    .date-inputs input { padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85em; }
+    .date-inputs input { 
+      padding: 4px 8px; 
+      border: 1px solid #ddd; 
+      border-radius: 4px; 
+      font-size: 0.85em; 
+      background: white; 
+    }
+    body.dark .date-inputs input { background: #3d3d3d; border-color: #555; color: #e0e0e0; }
     .date-inputs input:disabled { background: #f5f5f5; cursor: not-allowed; }
-    .btn-clear { padding: 4px 10px; background: #e9ecef; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em; color: #666; }
+    body.dark .date-inputs input:disabled { background: #2a2a2a; }
+    .btn-clear { 
+      padding: 4px 10px; 
+      background: #e9ecef; 
+      border: none; 
+      border-radius: 4px; 
+      cursor: pointer; 
+      font-size: 0.85em; 
+      color: #666; 
+    }
+    body.dark .btn-clear { background: #3d3d3d; color: #aaa; }
     .btn-clear:hover { background: #dee2e6; }
-    .btn-refresh { padding: 6px 12px; background: #0066ff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em; font-weight: 500; }
+    body.dark .btn-clear:hover { background: #4d4d4d; }
+    .btn-refresh { 
+      padding: 6px 12px; 
+      background: #0066ff; 
+      color: white; 
+      border: none; 
+      border-radius: 4px; 
+      cursor: pointer; 
+      font-size: 0.85em; 
+      font-weight: 500; 
+    }
     .btn-refresh:hover { background: #0052cc; }
     .chart-wrapper { position: relative; height: 400px; cursor: crosshair; }
-    .selection-box { position: absolute; border: 2px dashed #0066ff; background: rgba(0, 102, 255, 0.1); pointer-events: none; z-index: 10; }
-    .summary-panel { margin-top: 10px; padding: 12px; background: #f0f9ff; border-left: 4px solid #0066ff; border-radius: 4px; }
+    .selection-box { 
+      position: absolute; 
+      border: 2px dashed #0066ff; 
+      background: rgba(0, 102, 255, 0.1); 
+      pointer-events: none; 
+      z-index: 10; 
+    }
+    .selection-tooltip { 
+      position: absolute; 
+      background: rgba(0, 0, 0, 0.9); 
+      color: white; 
+      padding: 12px 16px; 
+      border-radius: 8px; 
+      font-size: 0.85em; 
+      pointer-events: none; 
+      z-index: 11; 
+      white-space: nowrap; 
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3); 
+    }
+    .selection-tooltip div { margin: 4px 0; }
+    .selection-tooltip .label { color: #aaa; font-size: 0.8em; }
+    .selection-tooltip .value { color: white; font-weight: 600; }
+    .summary-panel { 
+      margin-top: 10px; 
+      padding: 12px; 
+      background: #f0f9ff; 
+      border-left: 4px solid #0066ff; 
+      border-radius: 4px; 
+    }
+    body.dark .summary-panel { background: #1a2a3a; }
     .summary-panel h4 { color: #0066ff; margin-bottom: 8px; font-size: 0.9em; }
     .summary-stats { display: flex; gap: 15px; flex-wrap: wrap; }
     .summary-stat { display: flex; flex-direction: column; }
     .summary-stat-label { font-size: 0.75em; color: #666; }
+    body.dark .summary-stat-label { color: #999; }
     .summary-stat-value { font-size: 1em; font-weight: 600; color: #1a1a1a; }
-    .chart-legend { display: flex; gap: 20px; justify-content: center; margin-top: 15px; padding-top: 15px; border-top: 1px solid #e9ecef; font-size: 0.85em; }
+    body.dark .summary-stat-value { color: #e0e0e0; }
+    .chart-legend { 
+      display: flex; 
+      gap: 20px; 
+      justify-content: center; 
+      margin-top: 15px; 
+      padding-top: 15px; 
+      border-top: 1px solid #e9ecef; 
+      font-size: 0.85em; 
+    }
+    body.dark .chart-legend { border-top-color: #444; }
     .legend-item { display: flex; align-items: center; gap: 5px; }
     .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
     .no-data { text-align: center; padding: 40px; color: #999; font-style: italic; }
@@ -56,14 +205,22 @@
     <div class="header">
       <div>
         <h1>📊 Monitor Multi-Equipo - TM</h1>
-        <div class="subtitle">Controles individuales por equipo</div>
+        <div class="subtitle">Controles individuales • Día laboral 6am-6am</div>
       </div>
-      <div class="machine-selector">
-        <label>Máquinas:</label>
-        <select id="machineSelector" onchange="changeMachineType()">
-          <option value="armadoras">Armadoras</option>
-          <option value="expansoras">Expansoras</option>
-        </select>
+      <div class="header-controls">
+        <button class="theme-toggle" onclick="toggleTheme()" title="Cambiar tema">🌙</button>
+        <div class="machine-selector">
+          <label>Máquinas:</label>
+          <select id="machineSelector" onchange="changeMachineType()">
+            <option value="armadoras">Armadoras</option>
+            <option value="expansoras">Expansoras</option>
+            <option value="boquilladoras">Boquilladoras (61-67)</option>
+            <option value="engrafadoras">Engrafadoras (41-48)</option>
+            <option value="tester">Tester Estanqueidad (71-81)</option>
+            <option value="inyectora_km4000">Inyectora KM4000 (#92)</option>
+            <option value="inyectora_cosmos">Inyectora Cosmos 1500 (#91)</option>
+          </select>
+        </div>
       </div>
     </div>
     <div id="equipmentContainer"></div>
@@ -74,35 +231,86 @@
       armadoras: {
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQVrHs_GXmZGUMaOBjo4zr6mtNbFpf45WZ916Bj6LktK0i1F1gofWV_dnZfjam7MAbhDoQap_nZryeO/pub?gid=0&single=true&output=csv',
         name: 'Armadoras',
-        tco: 240
+        tco: 240,
+        description: 'Equipos 167 y otros'
       },
       expansoras: {
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRkBYlgzc71g76k03IhGUA29lNMKjJl1rgB9WwzXcxT4uHgvzsySXs5tAuQHqQKglMLFgao6u4enqPC/pub?gid=0&single=true&output=csv',
         name: 'Expansoras',
-        tco: 35
+        tco: 35,
+        description: 'Proceso de expansión'
+      },
+      boquilladoras: {
+        csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRyXM96q2hm6rpG8lqZC6MyFOpWmrofOyUh2wHuSByLUODy1AW3gwmurN3l_L8OUjVNyKzZnf9PQAg6/pub?gid=0&single=true&output=csv',
+        name: 'Boquilladoras',
+        tco: 120,
+        description: '7 equipos (61-67), #1 dedicada a calefacción'
+      },
+      engrafadoras: {
+        csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTey6-OpEpD1e2CBoJgya6E2aUjlexIIwEnbTYsXT2yXjU-1VFDYcJYDcRCYgw6HEI3crJMNSShjI3g/pub?gid=0&single=true&output=csv',
+        name: 'Engrafadoras',
+        tco: 72,
+        description: '8 equipos (41-48), #2 calefacción (1 pieza/golpe), resto (1 pieza cada 2 golpes)',
+        specialEquipment: {
+          '42': { piecesPerCycle: 1 }, // Engrafadora #2 (calefacción)
+          'default': { piecesPerCycle: 0.5 } // Resto: 1 pieza cada 2 golpes
+        }
+      },
+      tester: {
+        csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSILIiMU-mnFsNk5rDLgCr9f4I1tRuf85hyxjAYavD5yhp6OYNrAJhinh7z8gvvt490vk27DFqjGEPO/pub?gid=0&single=true&output=csv',
+        name: 'Tester Estanqueidad',
+        tco: 45,
+        description: '11 equipos (71-81), códigos: TOK (OK), TNG (falla)',
+        hasOkNg: true,
+        okCode: 'TOK',
+        ngCode: 'TNG'
+      },
+      inyectora_km4000: {
+        csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQB4WKu2lAwiBUY2-RBqF69LjB4US4V3tHS5-HFmPtTIMmX1Gy-tWx4wC5ER76Bz8n7pEQIzrvpEiYQ/pub?gid=0&single=true&output=csv',
+        name: 'Inyectora KM4000',
+        tco: 180,
+        description: 'Equipo #92'
+      },
+      inyectora_cosmos: {
+        csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQKIOPE8g77gFjoCKpJt8P-sBUvgv2Nb-AX4650AB8FOYo84TKMCM0hztArZJu6Ci2gKz7tysF8TneW/pub?gid=0&single=true&output=csv',
+        name: 'Inyectora Cosmos 1500',
+        tco: 210,
+        description: 'Equipo #91'
       }
     };
 
     let currentMachineType = 'armadoras';
     const CONFIG = { filterCode: 'TM', updateInterval: 10000 };
     let equipmentData = {}, charts = {}, lastDataHash = '';
-    let equipmentSettings = {}; // Configuración individual por equipo
+    let equipmentSettings = {};
 
-    // Convertir fecha a día laboral (6am-6am)
+    // Modo oscuro
+    function toggleTheme() {
+      document.body.classList.toggle('dark');
+      const btn = document.querySelector('.theme-toggle');
+      btn.textContent = document.body.classList.contains('dark') ? '☀️' : '🌙';
+      localStorage.setItem('theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+    }
+
+    // Restaurar tema guardado
+    if (localStorage.getItem('theme') === 'dark') {
+      document.body.classList.add('dark');
+      document.querySelector('.theme-toggle').textContent = '☀️';
+    }
+
+    // Día laboral (6am-6am)
     function toWorkDay(date) {
       const d = new Date(date);
       if (d.getHours() < 6) {
-        // Si es antes de las 6am, pertenece al día laboral anterior
         d.setDate(d.getDate() - 1);
       }
       d.setHours(6, 0, 0, 0);
       return d;
     }
 
-    // Obtener inicio y fin de día laboral
     function getWorkDayBounds(date) {
       const start = toWorkDay(date);
-      const end = new Date(start.getTime() + (24 * 60 * 60 * 1000)); // +24 horas
+      const end = new Date(start.getTime() + (24 * 60 * 60 * 1000));
       return { start, end };
     }
 
@@ -194,7 +402,6 @@
       }
       eqs.forEach(eq => {
         if (!document.getElementById(`equipment-${eq}`)) {
-          // Inicializar configuración del equipo
           equipmentSettings[eq] = {
             filter: 1440,
             pointSize: 4,
@@ -338,7 +545,6 @@
       const settings = equipmentSettings[eq];
       let data = equipmentData[eq] || [];
       
-      // Filtrar por tiempo o fechas
       if (settings.dateFrom || settings.dateTo) {
         data = data.filter(d => {
           if (settings.dateFrom && settings.dateTo) {
@@ -359,13 +565,15 @@
       
       const tco = MACHINE_CONFIGS[currentMachineType].tco;
       const maxAllowed = tco * 4;
-      
-      // NO filtrar, procesar todos los datos
       const avgInt = tco * 1000;
       const validForAvg = data.filter(d => d.value <= maxAllowed);
       const avgVal = validForAvg.length > 0 ? Math.round(validForAvg.reduce((s, d) => s + d.value, 0) / validForAvg.length) : tco;
+      
       const complete = [];
+      const verticalLines = [];
       let lastRealTime = null;
+      let lastBluePoint = null; // Último punto azul (sólido o hueco)
+      const sixHours = 6 * 60 * 60 * 1000;
       
       for (let i = 0; i < data.length; i++) {
         const cur = data[i];
@@ -374,51 +582,120 @@
         if (lastRealTime) {
           const gap = cur.datetime - lastRealTime;
           
-          if (gap > avgInt * 3 || isOverLimit) {
-            // Rellenar gap con amarillos
-            let pt = new Date(lastRealTime.getTime() + avgInt);
-            const targetTime = cur.datetime;
+          if (gap > avgInt * 3) {
+            // Gap detectado
             
-            while (pt < targetTime) {
+            // Rellenar con amarillos
+            let pt = new Date(lastRealTime.getTime() + avgInt);
+            while (pt < cur.datetime) {
               complete.push({ x: pt.getTime(), y: tco, isProjected: true, isHollow: false });
               pt = new Date(pt.getTime() + avgInt);
             }
             
             if (isOverLimit) {
-              // Punto sobre límite: círculo azul hueco en altura TCO
-              complete.push({ x: cur.datetime.getTime(), y: tco, isProjected: false, isHollow: true, realValue: cur.value });
+              const tolerance = (tco / 2) * 1000;
+              const coincidentIndices = [];
               
-              // Agregar puntos amarillos por el tiempo excedente
-              const extraTime = (cur.value - tco) * 1000;
-              const yellowCount = Math.floor(extraTime / avgInt);
-              
-              for (let j = 1; j <= yellowCount; j++) {
-                const yellowTime = new Date(cur.datetime.getTime() + (j * avgInt));
-                complete.push({ x: yellowTime.getTime(), y: tco, isProjected: true, isHollow: false });
+              for (let idx = complete.length - 1; idx >= 0; idx--) {
+                const p = complete[idx];
+                if (p.isProjected && !p.isHollow && 
+                    p.x < cur.datetime.getTime() && 
+                    Math.abs(p.x - cur.datetime.getTime()) <= tolerance) {
+                  coincidentIndices.push(idx);
+                }
               }
+              
+              for (const idx of coincidentIndices) {
+                complete.splice(idx, 1);
+              }
+              
+              const newPoint = { x: cur.datetime.getTime(), y: tco, isProjected: false, isHollow: true, realValue: cur.value };
+              complete.push(newPoint);
+              
+              // Verificar gap >6h desde último punto azul (sólido o hueco)
+              if (lastBluePoint) {
+                const gapFromBlue = cur.datetime - lastBluePoint.datetime;
+                if (gapFromBlue > sixHours) {
+                  // Línea en último punto azul antes del gap
+                  verticalLines.push({ x: lastBluePoint.x, isStart: false });
+                  // Línea en este nuevo punto azul (círculo hueco)
+                  verticalLines.push({ x: newPoint.x, isStart: true });
+                }
+              }
+              
+              lastBluePoint = { datetime: cur.datetime, x: newPoint.x };
             } else {
-              // Punto normal después de gap
               const adjustedTime = new Date(pt.getTime() - avgInt + avgInt);
-              complete.push({ x: adjustedTime.getTime(), y: cur.value, isProjected: false, isHollow: false });
+              const newPoint = { x: adjustedTime.getTime(), y: cur.value, isProjected: false, isHollow: false };
+              complete.push(newPoint);
+              
+              // Verificar gap >6h desde último punto azul
+              if (lastBluePoint) {
+                const gapFromBlue = cur.datetime - lastBluePoint.datetime;
+                if (gapFromBlue > sixHours) {
+                  // Línea en último punto azul antes del gap
+                  verticalLines.push({ x: lastBluePoint.x, isStart: false });
+                  // Línea en este nuevo punto azul
+                  verticalLines.push({ x: newPoint.x, isStart: true });
+                }
+              }
+              
+              lastBluePoint = { datetime: cur.datetime, x: newPoint.x };
             }
+          } else if (isOverLimit) {
+            const tolerance = (tco / 2) * 1000;
+            const coincidentIndices = [];
+            
+            for (let idx = complete.length - 1; idx >= 0; idx--) {
+              const p = complete[idx];
+              if (p.isProjected && !p.isHollow && 
+                  p.x < cur.datetime.getTime() && 
+                  Math.abs(p.x - cur.datetime.getTime()) <= tolerance) {
+                coincidentIndices.push(idx);
+              }
+            }
+            
+            for (const idx of coincidentIndices) {
+              complete.splice(idx, 1);
+            }
+            
+            const newPoint = { x: cur.datetime.getTime(), y: tco, isProjected: false, isHollow: true, realValue: cur.value };
+            complete.push(newPoint);
+            
+            // Verificar gap >6h desde último punto azul
+            if (lastBluePoint) {
+              const gapFromBlue = cur.datetime - lastBluePoint.datetime;
+              if (gapFromBlue > sixHours) {
+                verticalLines.push({ x: lastBluePoint.x, isStart: false });
+                verticalLines.push({ x: newPoint.x, isStart: true });
+              }
+            }
+            
+            lastBluePoint = { datetime: cur.datetime, x: newPoint.x };
           } else {
-            // Sin gap ni sobre límite
-            complete.push({ x: cur.datetime.getTime(), y: cur.value, isProjected: false, isHollow: false });
+            const newPoint = { x: cur.datetime.getTime(), y: cur.value, isProjected: false, isHollow: false };
+            complete.push(newPoint);
+            
+            // Verificar gap >6h desde último punto azul
+            if (lastBluePoint) {
+              const gapFromBlue = cur.datetime - lastBluePoint.datetime;
+              if (gapFromBlue > sixHours) {
+                verticalLines.push({ x: lastBluePoint.x, isStart: false });
+                verticalLines.push({ x: newPoint.x, isStart: true });
+              }
+            }
+            
+            lastBluePoint = { datetime: cur.datetime, x: newPoint.x };
           }
         } else {
-          // Primer punto
           if (isOverLimit) {
-            complete.push({ x: cur.datetime.getTime(), y: tco, isProjected: false, isHollow: true, realValue: cur.value });
-            
-            const extraTime = (cur.value - tco) * 1000;
-            const yellowCount = Math.floor(extraTime / avgInt);
-            
-            for (let j = 1; j <= yellowCount; j++) {
-              const yellowTime = new Date(cur.datetime.getTime() + (j * avgInt));
-              complete.push({ x: yellowTime.getTime(), y: tco, isProjected: true, isHollow: false });
-            }
+            const newPoint = { x: cur.datetime.getTime(), y: tco, isProjected: false, isHollow: true, realValue: cur.value };
+            complete.push(newPoint);
+            lastBluePoint = { datetime: cur.datetime, x: newPoint.x };
           } else {
-            complete.push({ x: cur.datetime.getTime(), y: cur.value, isProjected: false, isHollow: false });
+            const newPoint = { x: cur.datetime.getTime(), y: cur.value, isProjected: false, isHollow: false };
+            complete.push(newPoint);
+            lastBluePoint = { datetime: cur.datetime, x: newPoint.x };
           }
         }
         
@@ -426,8 +703,8 @@
       }
       
       // Proyecciones
-      const now = new Date(), since = now - lastRealTime;
-      if (since > avgInt * 3) {
+      const now = new Date(), since = lastRealTime ? (now - lastRealTime) : 0;
+      if (lastRealTime && since > avgInt * 3) {
         let pt = new Date(lastRealTime.getTime() + avgInt);
         while (pt <= now) {
           complete.push({ x: pt.getTime(), y: tco, isProjected: true, isHollow: false });
@@ -435,24 +712,22 @@
         }
       }
       
-      // Contar solo puntos válidos (no huecos ni proyectados) para estadísticas
-      const validPoints = complete.filter(d => !d.isProjected && !d.isHollow);
-      document.getElementById(`stat-total-${eq}`).textContent = validPoints.length;
+      const producedPieces = complete.filter(d => !d.isProjected);
+      document.getElementById(`stat-total-${eq}`).textContent = producedPieces.length;
       document.getElementById(`stat-avg-${eq}`).textContent = avgVal;
       
       const colors = complete.map(d => {
-        if (d.isHollow) return 'rgba(0, 102, 255, 0)'; // Transparente para círculos huecos
+        if (d.isHollow) return 'rgba(0, 102, 255, 0)';
         return d.isProjected ? '#fbbf24' : '#0066ff';
       });
       
       const borderColors = complete.map(d => {
-        if (d.isHollow) return '#0066ff'; // Borde azul para círculos huecos
+        if (d.isHollow) return '#0066ff';
         return d.isProjected ? '#fbbf24' : '#0066ff';
       });
       
       const borderWidths = complete.map(d => d.isHollow ? 2 : 0);
       
-      // Divisiones de tiempo
       let timeUnit = 'hour', timeStep = 1;
       if (settings.filter === 60) { timeUnit = 'minute'; timeStep = 5; }
       else if (settings.filter === 360) { timeUnit = 'minute'; timeStep = 15; }
@@ -460,10 +735,8 @@
       else if (settings.filter === 1440) { timeUnit = 'hour'; timeStep = 1; }
       else if (settings.filter === 10080) { timeUnit = 'day'; timeStep = 1; }
       
-      // Límites
       let minTime, maxTime;
       if (settings.zoomStart && settings.zoomEnd) {
-        // Si hay zoom activo, usar esos límites
         minTime = new Date(settings.zoomStart);
         maxTime = new Date(settings.zoomEnd);
       } else if (settings.dateFrom || settings.dateTo) {
@@ -485,6 +758,7 @@
         charts[eq].options.scales.x.time.stepSize = timeStep;
         charts[eq].options.scales.x.min = minTime.getTime();
         charts[eq].options.scales.x.max = maxTime.getTime();
+        charts[eq].verticalLines = verticalLines;
         charts[eq].update('none');
       } else {
         charts[eq] = new Chart(ctx, {
@@ -551,10 +825,36 @@
                 ticks: { color: '#666' }
               }
             }
-          }
+          },
+          plugins: [{
+            id: 'verticalLines',
+            afterDatasetsDraw: (chart) => {
+              const ctx = chart.ctx;
+              const yAxis = chart.scales.y;
+              const xAxis = chart.scales.x;
+              
+              if (chart.verticalLines) {
+                chart.verticalLines.forEach(line => {
+                  const x = xAxis.getPixelForValue(line.x);
+                  const yBottom = yAxis.bottom;
+                  const lineHeight = yAxis.height * 0.1;
+                  const yTop = yBottom - lineHeight;
+                  
+                  ctx.save();
+                  ctx.strokeStyle = '#0066ff';
+                  ctx.lineWidth = 2;
+                  ctx.beginPath();
+                  ctx.moveTo(x, yTop);
+                  ctx.lineTo(x, yBottom);
+                  ctx.stroke();
+                  ctx.restore();
+                });
+              }
+            }
+          }]
         });
         
-        // Agregar drag-select
+        charts[eq].verticalLines = verticalLines;
         setupDragSelect(eq);
       }
     }
@@ -562,7 +862,38 @@
     function setupDragSelect(eq) {
       const wrapper = document.getElementById(`wrapper-${eq}`);
       const canvas = document.getElementById(`chart-${eq}`);
-      let isDragging = false, startX, startY, selectionBox;
+      let isDragging = false, startX, startY, selectionBox, selectionTooltip;
+      
+      wrapper.addEventListener('wheel', (e) => {
+        if (Math.abs(e.deltaY) > 0) {
+          e.preventDefault();
+          const chart = charts[eq];
+          if (!chart) return;
+          
+          const xScale = chart.scales.x;
+          const currentMin = xScale.min;
+          const currentMax = xScale.max;
+          const range = currentMax - currentMin;
+          const scrollAmount = range * 0.05 * (e.deltaY > 0 ? 1 : -1);
+          
+          const newMin = currentMin + scrollAmount;
+          const newMax = currentMax + scrollAmount;
+          
+          const settings = equipmentSettings[eq];
+          const data = equipmentData[eq] || [];
+          if (data.length > 0) {
+            const dataMin = Math.min(...data.map(d => d.datetime.getTime()));
+            const dataMax = Math.max(...data.map(d => d.datetime.getTime()));
+            const now = new Date().getTime();
+            
+            if (newMin >= dataMin && newMax <= Math.max(dataMax, now)) {
+              settings.zoomStart = newMin;
+              settings.zoomEnd = newMax;
+              updateEquipmentChart(eq);
+            }
+          }
+        }
+      }, { passive: false });
       
       wrapper.addEventListener('mousedown', (e) => {
         if (e.target !== canvas) return;
@@ -576,6 +907,10 @@
         selectionBox.style.left = startX + 'px';
         selectionBox.style.top = startY + 'px';
         wrapper.appendChild(selectionBox);
+        
+        selectionTooltip = document.createElement('div');
+        selectionTooltip.className = 'selection-tooltip';
+        wrapper.appendChild(selectionTooltip);
       });
       
       wrapper.addEventListener('mousemove', (e) => {
@@ -593,6 +928,29 @@
         selectionBox.style.top = top + 'px';
         selectionBox.style.width = width + 'px';
         selectionBox.style.height = height + 'px';
+        
+        // Actualizar tooltip
+        const chart = charts[eq];
+        const xScale = chart.scales.x;
+        const yScale = chart.scales.y;
+        
+        const x1 = xScale.getValueForPixel(Math.min(startX, currentX));
+        const x2 = xScale.getValueForPixel(Math.max(startX, currentX));
+        
+        const date1 = new Date(x1);
+        const date2 = new Date(x2);
+        const timeDiff = Math.abs(x2 - x1);
+        const hours = Math.floor(timeDiff / (1000 * 60 * 60));
+        const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
+        
+        selectionTooltip.innerHTML = `
+          <div><span class="label">Desde:</span> <span class="value">${date1.toLocaleString('es-AR')}</span></div>
+          <div><span class="label">Hasta:</span> <span class="value">${date2.toLocaleString('es-AR')}</span></div>
+          <div><span class="label">Duración:</span> <span class="value">${hours}h ${minutes}m</span></div>
+        `;
+        
+        selectionTooltip.style.left = (left + width + 10) + 'px';
+        selectionTooltip.style.top = top + 'px';
       });
       
       wrapper.addEventListener('mouseup', (e) => {
@@ -604,8 +962,8 @@
         const endY = e.clientY - rect.top;
         
         if (selectionBox) selectionBox.remove();
+        if (selectionTooltip) selectionTooltip.remove();
         
-        // Calcular área seleccionada
         const chart = charts[eq];
         const xScale = chart.scales.x;
         const yScale = chart.scales.y;
@@ -623,23 +981,79 @@
       const chart = charts[eq];
       const data = chart.data.datasets[0].data;
       
+      // Filtrar puntos azules en el área
       const selected = data.filter(d => {
         return d.x >= x1 && d.x <= x2 && d.y >= y1 && d.y <= y2 && !d.isProjected;
       });
       
-      if (selected.length === 0) {
+      // Obtener líneas verticales (marcadores de gaps >6h)
+      const verticalLines = chart.verticalLines || [];
+      const linesInRange = verticalLines.filter(l => l.x >= x1 && l.x <= x2);
+      
+      // Identificar períodos de uptime (entre puntos azules)
+      // Si hay líneas verticales, usarlas para definir períodos
+      let uptimePeriods = [];
+      
+      if (selected.length > 0) {
+        // Ordenar puntos azules por tiempo
+        const bluePts = selected.slice().sort((a, b) => a.x - b.x);
+        
+        // Si hay líneas en el rango, dividir en segmentos
+        if (linesInRange.length > 0) {
+          const sortedLines = linesInRange.slice().sort((a, b) => a.x - b.x);
+          
+          // Crear segmentos entre líneas
+          for (let i = 0; i <= sortedLines.length; i++) {
+            const segStart = i === 0 ? x1 : sortedLines[i - 1].x;
+            const segEnd = i === sortedLines.length ? x2 : sortedLines[i].x;
+            
+            // Verificar si hay puntos azules en este segmento
+            const bluesInSeg = bluePts.filter(p => p.x >= segStart && p.x <= segEnd);
+            
+            if (bluesInSeg.length > 0) {
+              uptimePeriods.push({ start: segStart, end: segEnd });
+            }
+          }
+        } else {
+          // Sin líneas verticales, todo el rango es uptime si hay azules
+          uptimePeriods.push({ start: x1, end: x2 });
+        }
+      }
+      
+      // Contar amarillos solo en períodos de uptime
+      let lostPieces = 0;
+      const yellowsInRange = data.filter(d => {
+        return d.x >= x1 && d.x <= x2 && d.isProjected && !d.isHollow;
+      });
+      
+      for (const yellow of yellowsInRange) {
+        // Verificar si el amarillo está dentro de algún período de uptime
+        const isInUptime = uptimePeriods.some(period => 
+          yellow.x >= period.start && yellow.x <= period.end
+        );
+        
+        if (isInUptime) {
+          lostPieces++;
+        }
+      }
+      
+      if (selected.length === 0 && lostPieces === 0) {
         document.getElementById(`summary-${eq}`).innerHTML = '';
         return;
       }
       
       const values = selected.map(d => d.y);
-      const avg = (values.reduce((a, b) => a + b, 0) / values.length).toFixed(1);
-      const min = Math.min(...values);
-      const max = Math.max(...values);
+      const avg = values.length > 0 ? (values.reduce((a, b) => a + b, 0) / values.length).toFixed(1) : 0;
+      const min = values.length > 0 ? Math.min(...values) : 0;
+      const max = values.length > 0 ? Math.max(...values) : 0;
       const total = selected.length;
       
       const startDate = new Date(x1).toLocaleString('es-AR');
       const endDate = new Date(x2).toLocaleString('es-AR');
+      
+      const timeDiff = Math.abs(x2 - x1);
+      const hours = Math.floor(timeDiff / (1000 * 60 * 60));
+      const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
       
       document.getElementById(`summary-${eq}`).innerHTML = `
         <div class="summary-panel">
@@ -652,12 +1066,24 @@
           </div>
           <div class="summary-stats">
             <div class="summary-stat">
-              <div class="summary-stat-label">Período</div>
-              <div class="summary-stat-value">${startDate} - ${endDate}</div>
+              <div class="summary-stat-label">Desde</div>
+              <div class="summary-stat-value">${startDate}</div>
+            </div>
+            <div class="summary-stat">
+              <div class="summary-stat-label">Hasta</div>
+              <div class="summary-stat-value">${endDate}</div>
+            </div>
+            <div class="summary-stat">
+              <div class="summary-stat-label">Duración</div>
+              <div class="summary-stat-value">${hours}h ${minutes}m</div>
             </div>
             <div class="summary-stat">
               <div class="summary-stat-label">Procesos</div>
               <div class="summary-stat-value">${total}</div>
+            </div>
+            <div class="summary-stat">
+              <div class="summary-stat-label">Piezas perdidas (uptime)</div>
+              <div class="summary-stat-value">${lostPieces}</div>
             </div>
             <div class="summary-stat">
               <div class="summary-stat-label">Promedio</div>
