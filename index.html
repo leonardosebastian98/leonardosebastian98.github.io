@@ -261,7 +261,8 @@
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSILIiMU-mnFsNk5rDLgCr9f4I1tRuf85hyxjAYavD5yhp6OYNrAJhinh7z8gvvt490vk27DFqjGEPO/pub?gid=0&single=true&output=csv',
         name: 'Tester Estanqueidad',
         tco: 45,
-        description: '11 equipos (71-81), códigos: TOK (OK), TNG (falla)'
+        description: '11 equipos (71-81), códigos: TOK (OK), TNG (falla)',
+        multipleCodes: ['TOK', 'TNG'] // Acepta ambos códigos
       },
       inyectora_km4000: {
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQB4WKu2lAwiBUY2-RBqF69LjB4US4V3tHS5-HFmPtTIMmX1Gy-tWx4wC5ER76Bz8n7pEQIzrvpEiYQ/pub?gid=0&single=true&output=csv',
@@ -370,7 +371,16 @@
     function processData(csv) {
       const lines = csv.split('\n'), dataByEq = {}, seen = {};
       const config = MACHINE_CONFIGS[currentMachineType];
-      const filterCode = config.isGolMode ? 'GOL' : CONFIG.filterCode;
+      
+      // Determinar códigos a filtrar
+      let acceptedCodes = [];
+      if (config.isGolMode) {
+        acceptedCodes = ['GOL'];
+      } else if (config.multipleCodes) {
+        acceptedCodes = config.multipleCodes; // ['TOK', 'TNG']
+      } else {
+        acceptedCodes = [CONFIG.filterCode]; // ['TM']
+      }
       
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
@@ -380,9 +390,8 @@
         const eq = c[2]?.trim(), cod = c[6]?.trim(), date = c[4]?.trim(), time = c[5]?.trim();
         let val = parseInt(c[7]?.trim()) || 0;
         
-        if (cod === filterCode && eq) {
-          // Para Balancines (GOL), el valor ya es el número de golpes - se muestra directo
-          
+        // Verificar si el código está en la lista de códigos aceptados
+        if (acceptedCodes.includes(cod) && eq) {
           if (!dataByEq[eq]) {
             dataByEq[eq] = [];
             seen[eq] = new Set();
@@ -391,7 +400,7 @@
           if (!seen[eq].has(key)) {
             seen[eq].add(key);
             const dt = parseDateTime(date, time);
-            if (dt) dataByEq[eq].push({ datetime: dt, value: val });
+            if (dt) dataByEq[eq].push({ datetime: dt, value: val, code: cod });
           }
         }
       }
@@ -754,6 +763,22 @@
         lastRealTime = cur.datetime;
       }
       
+      // Propagar códigos (TOK/TNG) desde data a complete
+      // Crear un map de timestamps a códigos
+      const codeMap = new Map();
+      data.forEach(d => {
+        if (d.code) {
+          codeMap.set(d.datetime.getTime(), d.code);
+        }
+      });
+      
+      // Asignar códigos a puntos en complete
+      complete.forEach(point => {
+        if (!point.isProjected && codeMap.has(point.x)) {
+          point.code = codeMap.get(point.x);
+        }
+      });
+      
       // Proyecciones
       const now = new Date(), since = now - lastRealTime;
       if (since > avgInt * 3) {
@@ -781,13 +806,25 @@
       // Las estadísticas se actualizarán después de crear/actualizar el chart
       
       const colors = complete.map(d => {
-        if (d.isHollow) return 'rgba(0, 102, 255, 0)'; // Transparente para círculos huecos
-        return d.isProjected ? '#fbbf24' : '#0066ff';
+        // TNG (falla) = rojo
+        if (d.code === 'TNG') return '#ef4444';
+        // Círculos huecos = transparente
+        if (d.isHollow) return 'rgba(0, 102, 255, 0)';
+        // Amarillos = proyectados
+        if (d.isProjected) return '#fbbf24';
+        // TOK o normal = azul
+        return '#0066ff';
       });
       
       const borderColors = complete.map(d => {
-        if (d.isHollow) return '#0066ff'; // Borde azul para círculos huecos
-        return d.isProjected ? '#fbbf24' : '#0066ff';
+        // TNG (falla) = rojo
+        if (d.code === 'TNG') return '#ef4444';
+        // Círculos huecos = borde azul
+        if (d.isHollow) return '#0066ff';
+        // Amarillos = amarillo
+        if (d.isProjected) return '#fbbf24';
+        // TOK o normal = azul
+        return '#0066ff';
       });
       
       const borderWidths = complete.map(d => d.isHollow ? 2 : 0);
@@ -917,6 +954,15 @@
                     const config = MACHINE_CONFIGS[currentMachineType];
                     const unit = config.useGolCode ? ' piezas' : ' seg';
                     const point = complete[c.dataIndex];
+                    
+                    // Mostrar código si es TOK o TNG
+                    if (point.code === 'TOK') {
+                      return `✅ Aprobado: ${c.parsed.y}${unit}`;
+                    }
+                    if (point.code === 'TNG') {
+                      return `❌ Rechazado: ${c.parsed.y}${unit}`;
+                    }
+                    
                     if (point.isHollow) {
                       return `🔵 Proceso lento: ${point.realValue}${unit} (excede TCO)`;
                     }
