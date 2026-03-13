@@ -293,6 +293,7 @@
     };
     let equipmentData = {}, charts = {}, lastDataHash = '';
     let equipmentSettings = {}; // Configuración individual por equipo
+    let dragSelectInitialized = {}; // Evitar event listeners duplicados
 
     // Convertir fecha a día laboral (6am-6am)
     function toWorkDay(date) {
@@ -350,6 +351,7 @@
         Object.keys(charts).forEach(eq => charts[eq]?.destroy());
         charts = {};
         equipmentSettings = {};
+        dragSelectInitialized = {}; // Limpiar tracking de event listeners
         document.getElementById('equipmentContainer').innerHTML = '<div class="no-data">Cargando...</div>';
         loadData();
       }
@@ -405,11 +407,28 @@
         }
       }
       for (let eq in dataByEq) dataByEq[eq].sort((a, b) => a.datetime - b.datetime);
+      
+      // PURGA: Eliminar datos mayores a x días para evitar memory leaks
+      const maxDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+      for (let eq in dataByEq) {
+        const originalCount = dataByEq[eq].length;
+        dataByEq[eq] = dataByEq[eq].filter(d => d.datetime >= maxDaysAgo);
+        const purgedCount = originalCount - dataByEq[eq].length;
+        if (purgedCount > 0) {
+          console.log(`📦 Purga equipo ${eq}: ${purgedCount} registros antiguos eliminados (${dataByEq[eq].length} restantes)`);
+        }
+      }
+      
       const newHash = generateDataHash(dataByEq);
       if (newHash !== lastDataHash) {
         equipmentData = dataByEq;
         lastDataHash = newHash;
         renderEquipmentCharts();
+        
+        // Log de estadísticas para monitoreo de memoria
+        const totalPoints = Object.values(equipmentData).reduce((sum, arr) => sum + arr.length, 0);
+        const equipmentCount = Object.keys(equipmentData).length;
+        console.log(`📊 Stats: ${equipmentCount} equipos, ${totalPoints.toLocaleString()} puntos totales en memoria`);
       }
     }
 
@@ -696,13 +715,22 @@
               complete.push({ x: adjustedTime.getTime(), y: cur.value, isProjected: false, isHollow: false });
             }
           } else if (gap > avgInt * 3) {
-            // Gap normal (>3×TCO pero <4h)
+            // Gap normal (>3×TCO pero <gapMaximo)
             let pt = new Date(lastRealTime.getTime() + avgInt);
             const targetTime = cur.datetime;
             
-            while (pt < targetTime) {
+            // SEGURIDAD: Limitar a máximo 10000 puntos amarillos por gap
+            let safetyCounter = 0;
+            const MAX_YELLOW_POINTS = 10000;
+            
+            while (pt < targetTime && safetyCounter < MAX_YELLOW_POINTS) {
               complete.push({ x: pt.getTime(), y: tco, isProjected: true, isHollow: false });
               pt = new Date(pt.getTime() + avgInt);
+              safetyCounter++;
+            }
+            
+            if (safetyCounter >= MAX_YELLOW_POINTS) {
+              console.warn(`⚠️ Límite de seguridad alcanzado: ${MAX_YELLOW_POINTS} puntos amarillos generados para gap de ${Math.round(gap / 1000 / 60)} minutos`);
             }
             
             if (isOverLimit) {
@@ -783,9 +811,19 @@
       const now = new Date(), since = now - lastRealTime;
       if (since > avgInt * 3) {
         let pt = new Date(lastRealTime.getTime() + avgInt);
-        while (pt <= now) {
+        
+        // SEGURIDAD: Limitar proyecciones
+        let safetyCounter = 0;
+        const MAX_PROJECTIONS = 5000;
+        
+        while (pt <= now && safetyCounter < MAX_PROJECTIONS) {
           complete.push({ x: pt.getTime(), y: tco, isProjected: true, isHollow: false });
           pt = new Date(pt.getTime() + avgInt);
+          safetyCounter++;
+        }
+        
+        if (safetyCounter >= MAX_PROJECTIONS) {
+          console.warn(`⚠️ Límite de proyecciones alcanzado: ${MAX_PROJECTIONS} puntos`);
         }
       }
       
@@ -1171,7 +1209,7 @@
                   const data = context.chart.data.datasets[0].data;
                   if (data && data.length > 0) {
                     const maxY = Math.max(...data.map(d => d.y || 0));
-                    return maxY * 1.1;
+                    return maxY * 1.05;
                   }
                   return undefined;
                 },
@@ -1267,6 +1305,10 @@
     }
 
     function setupDragSelect(eq) {
+      // Evitar agregar event listeners múltiples veces
+      if (dragSelectInitialized[eq]) return;
+      dragSelectInitialized[eq] = true;
+      
       const wrapper = document.getElementById(`wrapper-${eq}`);
       const canvas = document.getElementById(`chart-${eq}`);
       let isDragging = false, isRightDrag = false, startX, startY, selectionBox, selectionTooltip;
@@ -1335,8 +1377,48 @@
         
         if (!isDragging) return;
         const rect = canvas.getBoundingClientRect();
-        const currentX = e.clientX - rect.left;
-        const currentY = e.clientY - rect.top;
+        let currentX = e.clientX - rect.left;
+        let currentY = e.clientY - rect.top;
+        
+        // Detectar si el mouse llegó al borde del gráfico (1px antes del límite)
+        const edgeThreshold = 20;
+        let hitEdge = false;
+        
+        if (currentX <= edgeThreshold) {
+          currentX = 0;
+          hitEdge = true;
+        } else if (currentX >= rect.width - edgeThreshold) {
+          currentX = rect.width;
+          hitEdge = true;
+        }
+        
+        if (currentY <= edgeThreshold) {
+          currentY = 0;
+          hitEdge = true;
+        } else if (currentY >= rect.height - edgeThreshold) {
+          currentY = rect.height;
+          hitEdge = true;
+        }
+        
+        // Si llegó al borde, auto-completar la selección
+        if (hitEdge) {
+          isDragging = false;
+          
+          if (selectionBox) selectionBox.remove();
+          if (selectionTooltip) selectionTooltip.remove();
+          
+          const chart = charts[eq];
+          const xScale = chart.scales.x;
+          const yScale = chart.scales.y;
+          
+          const x1 = xScale.getValueForPixel(Math.min(startX, currentX));
+          const x2 = xScale.getValueForPixel(Math.max(startX, currentX));
+          const y1 = yScale.getValueForPixel(Math.max(startY, currentY));
+          const y2 = yScale.getValueForPixel(Math.min(startY, currentY));
+          
+          showSummary(eq, x1, x2, y1, y2);
+          return;
+        }
         
         const width = Math.abs(currentX - startX);
         const height = Math.abs(currentY - startY);
