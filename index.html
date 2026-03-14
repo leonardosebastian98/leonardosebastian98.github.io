@@ -409,7 +409,7 @@
       for (let eq in dataByEq) dataByEq[eq].sort((a, b) => a.datetime - b.datetime);
       
       // PURGA: Eliminar datos mayores a x días para evitar memory leaks
-      const maxDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+      const maxDaysAgo = new Date(Date.now() - (90 * 24 * 60 * 60 * 1000));
       for (let eq in dataByEq) {
         const originalCount = dataByEq[eq].length;
         dataByEq[eq] = dataByEq[eq].filter(d => d.datetime >= maxDaysAgo);
@@ -1050,7 +1050,7 @@
                   const data = context.chart.data.datasets[0].data;
                   if (data && data.length > 0) {
                     const maxY = Math.max(...data.map(d => d.y || 0));
-                    return maxY * 1.1; // 10% más
+                    return maxY * 1.03; // 3% más
                   }
                   return undefined;
                 },
