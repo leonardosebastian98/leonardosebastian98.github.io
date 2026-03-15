@@ -238,24 +238,28 @@
       armadoras: {
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQVrHs_GXmZGUMaOBjo4zr6mtNbFpf45WZ916Bj6LktK0i1F1gofWV_dnZfjam7MAbhDoQap_nZryeO/pub?gid=0&single=true&output=csv',
         name: 'Armadoras',
-        tco: 240
+        tco: 240,
+        ordersUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTyP9OJFSP2WnhhxVT5QW_4Q7yJvEXbu8gZq0V6n5rupZKAzq6NJg_HLUcvAEjO82NoDGdRS7RlYfvp/pub?gid=0&single=true&output=csv'
       },
       expansoras: {
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRkBYlgzc71g76k03IhGUA29lNMKjJl1rgB9WwzXcxT4uHgvzsySXs5tAuQHqQKglMLFgao6u4enqPC/pub?gid=0&single=true&output=csv',
         name: 'Expansoras',
         tco: 35
+        // ordersUrl: '' ← RELLENAR URL de órdenes de fabricación aquí
       },
       boquilladoras: {
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRyXM96q2hm6rpG8lqZC6MyFOpWmrofOyUh2wHuSByLUODy1AW3gwmurN3l_L8OUjVNyKzZnf9PQAg6/pub?gid=0&single=true&output=csv',
         name: 'Boquilladoras',
         tco: 120,
         description: '7 equipos (61-67), #1 dedicada a calefacción'
+        // ordersUrl: '' ← RELLENAR URL de órdenes de fabricación aquí
       },
       engrafadoras: {
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTey6-OpEpD1e2CBoJgya6E2aUjlexIIwEnbTYsXT2yXjU-1VFDYcJYDcRCYgw6HEI3crJMNSShjI3g/pub?gid=0&single=true&output=csv',
         name: 'Engrafadoras',
         tco: 72,
         description: '8 equipos (41-48), #2 calefacción (1 pieza/golpe), resto (1 pieza cada 2 golpes)'
+        // ordersUrl: '' ← RELLENAR URL de órdenes de fabricación aquí
       },
       tester: {
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSILIiMU-mnFsNk5rDLgCr9f4I1tRuf85hyxjAYavD5yhp6OYNrAJhinh7z8gvvt490vk27DFqjGEPO/pub?gid=0&single=true&output=csv',
@@ -263,18 +267,21 @@
         tco: 45,
         description: '11 equipos (71-81), códigos: TOK (OK), TNG (falla)',
         multipleCodes: ['TOK', 'TNG'] // Acepta ambos códigos
+        // ordersUrl: '' ← RELLENAR URL de órdenes de fabricación aquí
       },
       inyectora_km4000: {
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQB4WKu2lAwiBUY2-RBqF69LjB4US4V3tHS5-HFmPtTIMmX1Gy-tWx4wC5ER76Bz8n7pEQIzrvpEiYQ/pub?gid=0&single=true&output=csv',
         name: 'Inyectora KM4000',
         tco: 180,
         description: 'Equipo #92'
+        // ordersUrl: '' ← RELLENAR URL de órdenes de fabricación aquí
       },
       inyectora_cosmos: {
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQKIOPE8g77gFjoCKpJt8P-sBUvgv2Nb-AX4650AB8FOYo84TKMCM0hztArZJu6Ci2gKz7tysF8TneW/pub?gid=0&single=true&output=csv',
         name: 'Inyectora Cosmos 1500',
         tco: 210,
         description: 'Equipo #91'
+        // ordersUrl: '' ← RELLENAR URL de órdenes de fabricación aquí
       },
       balancines: {
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vToWFuhar0t6IouJWXKsQrNM7odX5io3O0EvKoax8T0L23HMpgWzTO3A__49IdxueKu7V97U4eV2It9/pub?gid=0&single=true&output=csv',
@@ -282,6 +289,7 @@
         tco: null, // No tiene TCO
         description: 'Golpes cada 5 minutos (código GOL)',
         isGolMode: true // Modo especial: solo mostrar valores GOL reales
+        // ordersUrl: '' ← RELLENAR URL de órdenes de fabricación aquí
       }
     };
 
@@ -294,6 +302,7 @@
     let equipmentData = {}, charts = {}, lastDataHash = '';
     let equipmentSettings = {}; // Configuración individual por equipo
     let dragSelectInitialized = {}; // Evitar event listeners duplicados
+    let fabricationOrders = {}; // Órdenes de fabricación por equipo
 
     // Convertir fecha a día laboral (6am-6am)
     function toWorkDay(date) {
@@ -348,6 +357,7 @@
         currentMachineType = newType;
         equipmentData = {};
         lastDataHash = '';
+        fabricationOrders = {}; // Limpiar órdenes
         Object.keys(charts).forEach(eq => charts[eq]?.destroy());
         charts = {};
         equipmentSettings = {};
@@ -359,15 +369,179 @@
 
     async function loadData() {
       try {
-        const r = await fetch(MACHINE_CONFIGS[currentMachineType].csvUrl);
+        const config = MACHINE_CONFIGS[currentMachineType];
+        
+        // Cargar datos de producción
+        const r = await fetch(config.csvUrl);
         if (!r.ok) throw new Error(`HTTP:${r.status}`);
         processData(await r.text());
+        
+        // Cargar órdenes de fabricación si existen
+        if (config.ordersUrl) {
+          try {
+            const ordersResponse = await fetch(config.ordersUrl);
+            if (ordersResponse.ok) {
+              processOrders(await ordersResponse.text());
+            }
+          } catch (e) {
+            console.warn('⚠️ No se pudieron cargar órdenes:', e.message);
+          }
+        }
+        
         return true;
       } catch (e) {
-        console.error('❌', e);
+        console.error('❌ Error en loadData:', e);
         document.getElementById('equipmentContainer').innerHTML = `<div class="no-data">❌ Error: ${e.message}</div>`;
         return false;
       }
+    }
+    
+    // Parsear la columna "Maquina" del CSV de órdenes
+    // Formatos soportados:
+    // "1" = solo máquina 1
+    // "1-3" = máquinas 1 y 3
+    // "1_3" = máquinas 1, 2 y 3 (rango)
+    function parseMachineColumn(machineStr) {
+      if (!machineStr || machineStr.trim() === '') return [];
+      
+      const machines = [];
+      const parts = machineStr.trim().split('-');
+      
+      for (const part of parts) {
+        if (part.includes('_')) {
+          // Formato rango: 1_3 = máquinas 1, 2, 3
+          const [start, end] = part.split('_').map(n => parseInt(n.trim()));
+          if (!isNaN(start) && !isNaN(end)) {
+            for (let i = Math.min(start, end); i <= Math.max(start, end); i++) {
+              machines.push(i.toString());
+            }
+          }
+        } else {
+          // Formato simple: solo un número
+          const num = parseInt(part.trim());
+          if (!isNaN(num)) {
+            machines.push(num.toString());
+          }
+        }
+      }
+      
+      return machines;
+    }
+
+    function processOrders(csv) {
+      const lines = csv.split('\n');
+      const orders = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        const parts = line.split(',');
+        if (parts.length < 6) continue;
+        
+        const orderNum = parts[0]?.trim();
+        const model = parts[1]?.trim();
+        const quantity = parseInt(parts[2]?.trim()) || 0;
+        const tco = parseInt(parts[3]?.trim()) || 0;
+        const date = parts[4]?.trim();
+        const time = parts[5]?.trim();
+        const machineColumn = parts[6]?.trim() || ''; // Nueva columna Maquina
+        
+        const datetime = parseDateTime(date, time);
+        if (datetime && orderNum) {
+          // Parsear columna de máquinas
+          const machines = parseMachineColumn(machineColumn);
+          
+          orders.push({
+            orderNum,
+            model,
+            quantity,
+            tco,
+            datetime,
+            startTime: datetime.getTime(),
+            machines // Array de equipos que aplican a esta orden
+          });
+        }
+      }
+      
+      // Ordenar por fecha
+      orders.sort((a, b) => a.startTime - b.startTime);
+      
+      // Calcular endTime para cada orden por máquina
+      // Cada máquina tiene su propia secuencia de órdenes
+      const ordersByMachine = {};
+      
+      orders.forEach(order => {
+        if (order.machines.length === 0) {
+          // Si no especifica máquinas, aplica a TODAS
+          order.machines = ['ALL'];
+        }
+        
+        order.machines.forEach(machine => {
+          if (!ordersByMachine[machine]) {
+            ordersByMachine[machine] = [];
+          }
+          ordersByMachine[machine].push({...order, machine});
+        });
+      });
+      
+      // Calcular endTime por máquina
+      const now = Date.now();
+      Object.keys(ordersByMachine).forEach(machine => {
+        const machineOrders = ordersByMachine[machine];
+        machineOrders.sort((a, b) => a.startTime - b.startTime);
+        
+        for (let i = 0; i < machineOrders.length; i++) {
+          if (i < machineOrders.length - 1) {
+            machineOrders[i].endTime = machineOrders[i + 1].startTime;
+          } else {
+            machineOrders[i].endTime = now; // La última orden llega hasta ahora
+          }
+        }
+      });
+      
+      fabricationOrders = ordersByMachine;
+      
+      const totalOrders = Object.values(ordersByMachine).reduce((sum, arr) => sum + arr.length, 0);
+      console.log(`📋 ${totalOrders} órdenes cargadas para ${Object.keys(ordersByMachine).length} equipos`);
+      
+      // Si ya hay datos de equipos cargados, re-renderizar para mostrar las órdenes
+      if (Object.keys(equipmentData).length > 0) {
+        renderEquipmentCharts();
+      }
+    }
+    
+    // Calcular estadísticas de producción para una orden
+    function calculateOrderStats(order, equipmentDataArray) {
+      const orderData = equipmentDataArray.filter(d => 
+        d.datetime.getTime() >= order.startTime && 
+        d.datetime.getTime() < order.endTime
+      );
+      
+      const unitsProduced = orderData.length;
+      const avgTCO = orderData.length > 0
+        ? Math.round(orderData.reduce((sum, d) => sum + d.value, 0) / orderData.length)
+        : 0;
+      
+      return { unitsProduced, avgTCO };
+    }
+    
+    // Obtener TCO activo para un timestamp y equipo específico (de la orden si existe, sino del config)
+    function getTCOForTimestamp(timestamp, equipment) {
+      const specificOrders = fabricationOrders[equipment] || [];
+      const allOrders = fabricationOrders['ALL'] || [];
+      const equipmentOrders = [...specificOrders, ...allOrders];
+      
+      if (equipmentOrders.length === 0) {
+        return MACHINE_CONFIGS[currentMachineType].tco;
+      }
+      
+      // Buscar la orden activa en ese timestamp
+      const activeOrder = equipmentOrders.find(order => 
+        timestamp >= order.startTime && timestamp < order.endTime
+      );
+      
+      return activeOrder ? activeOrder.tco : MACHINE_CONFIGS[currentMachineType].tco;
     }
 
     function processData(csv) {
@@ -408,14 +582,28 @@
       }
       for (let eq in dataByEq) dataByEq[eq].sort((a, b) => a.datetime - b.datetime);
       
-      // PURGA: Eliminar datos mayores a x días para evitar memory leaks
-      const maxDaysAgo = new Date(Date.now() - (90 * 24 * 60 * 60 * 1000));
+      // PURGA: Calcular límite de antigüedad dinámicamente
+      // Por defecto 90 días, pero se ajusta si el usuario selecciona fechas más antiguas
+      let maxDaysBack = 90; // Default: 90 días
+      
+      // Verificar si algún equipo tiene fecha "desde" seleccionada
+      Object.values(equipmentSettings).forEach(settings => {
+        if (settings.dateFrom) {
+          const daysFromNow = Math.ceil((Date.now() - settings.dateFrom.getTime()) / (24 * 60 * 60 * 1000));
+          if (daysFromNow > maxDaysBack) {
+            maxDaysBack = daysFromNow + 7; // Agregar 7 días de buffer
+          }
+        }
+      });
+      
+      const maxDaysAgo = new Date(Date.now() - (maxDaysBack * 24 * 60 * 60 * 1000));
+      
       for (let eq in dataByEq) {
         const originalCount = dataByEq[eq].length;
         dataByEq[eq] = dataByEq[eq].filter(d => d.datetime >= maxDaysAgo);
         const purgedCount = originalCount - dataByEq[eq].length;
         if (purgedCount > 0) {
-          console.log(`📦 Purga equipo ${eq}: ${purgedCount} registros antiguos eliminados (${dataByEq[eq].length} restantes)`);
+          console.log(`📦 Purga equipo ${eq}: ${purgedCount} registros antiguos eliminados (${dataByEq[eq].length} restantes) - límite: ${maxDaysBack} días`);
         }
       }
       
@@ -657,11 +845,13 @@
       }
       
       // MODO NORMAL: Con TCO
-      const maxAllowed = tco * 4;
+      // Usar TCO del config como fallback, pero será dinámico por orden
+      const baseTCO = tco;
+      const baseMaxAllowed = tco * 4;
       
-      // NO filtrar, procesar todos los datos
-      const avgInt = tco * 1000;
-      const validForAvg = data.filter(d => d.value <= maxAllowed);
+      // Calcular avgInt inicial (se actualizará dinámicamente en el loop)
+      const baseAvgInt = tco * 1000;
+      const validForAvg = data.filter(d => d.value <= baseMaxAllowed);
       const avgVal = validForAvg.length > 0 ? Math.round(validForAvg.reduce((s, d) => s + d.value, 0) / validForAvg.length) : tco;
       const complete = [];
       const verticalLines = []; // Para marcar períodos largos
@@ -670,12 +860,22 @@
       
       for (let i = 0; i < data.length; i++) {
         const cur = data[i];
+        
+        // TCO DINÁMICO: Obtener TCO de la orden activa en este timestamp
+        const currentTCO = getTCOForTimestamp(cur.datetime.getTime(), eq);
+        const maxAllowed = currentTCO * 4;
+        const avgInt = currentTCO * 1000;
+        
         const isOverLimit = cur.value > maxAllowed;
         
         if (lastRealTime) {
           const gap = cur.datetime - lastRealTime;
           
-          // Detectar período largo (>4 horas)
+          // TCO para el gap (usar TCO del último punto)
+          const gapTCO = getTCOForTimestamp(lastRealTime.getTime());
+          const gapAvgInt = gapTCO * 1000;
+          
+          // Detectar período largo (>7.5 horas)
           if (gap > gapMaximo) {
             // Marcar el último punto antes del período largo
             verticalLines.push({
@@ -689,10 +889,10 @@
               label: 'Inicio período'
             });
             
-            // El primer punto después de >4h debe estar en tiempo estándar
+            // El primer punto después de gap largo debe estar en tiempo estándar
             if (isOverLimit) {
               // Remover amarillos anteriores coincidentes
-              const tolerance = (tco / 2) * 1000;
+              const tolerance = (currentTCO / 2) * 1000;
               const coincidentIndices = [];
               
               for (let idx = complete.length - 1; idx >= 0; idx--) {
@@ -708,15 +908,15 @@
                 complete.splice(idx, 1);
               }
               
-              complete.push({ x: cur.datetime.getTime(), y: tco, isProjected: false, isHollow: true, realValue: cur.value });
+              complete.push({ x: cur.datetime.getTime(), y: currentTCO, isProjected: false, isHollow: true, realValue: cur.value });
             } else {
               // Punto normal, ajustar a tiempo estándar (TCO antes del punto real)
               const adjustedTime = new Date(cur.datetime.getTime() - avgInt);
               complete.push({ x: adjustedTime.getTime(), y: cur.value, isProjected: false, isHollow: false });
             }
-          } else if (gap > avgInt * 3) {
+          } else if (gap > gapAvgInt * 3) {
             // Gap normal (>3×TCO pero <gapMaximo)
-            let pt = new Date(lastRealTime.getTime() + avgInt);
+            let pt = new Date(lastRealTime.getTime() + gapAvgInt);
             const targetTime = cur.datetime;
             
             // SEGURIDAD: Limitar a máximo 10000 puntos amarillos por gap
@@ -724,8 +924,13 @@
             const MAX_YELLOW_POINTS = 10000;
             
             while (pt < targetTime && safetyCounter < MAX_YELLOW_POINTS) {
-              complete.push({ x: pt.getTime(), y: tco, isProjected: true, isHollow: false });
-              pt = new Date(pt.getTime() + avgInt);
+              // Usar TCO de la orden activa en cada punto amarillo
+              const yellowTCO = getTCOForTimestamp(pt.getTime(), eq);
+              complete.push({ x: pt.getTime(), y: yellowTCO, isProjected: true, isHollow: false });
+              
+              // Incrementar usando el TCO del siguiente punto
+              const nextYellowTCO = getTCOForTimestamp(pt.getTime() + 1000, eq); // +1 segundo
+              pt = new Date(pt.getTime() + (nextYellowTCO * 1000));
               safetyCounter++;
             }
             
@@ -734,7 +939,7 @@
             }
             
             if (isOverLimit) {
-              const tolerance = (tco / 2) * 1000;
+              const tolerance = (currentTCO / 2) * 1000;
               const coincidentIndices = [];
               
               for (let idx = complete.length - 1; idx >= 0; idx--) {
@@ -750,14 +955,14 @@
                 complete.splice(idx, 1);
               }
               
-              complete.push({ x: cur.datetime.getTime(), y: tco, isProjected: false, isHollow: true, realValue: cur.value });
+              complete.push({ x: cur.datetime.getTime(), y: currentTCO, isProjected: false, isHollow: true, realValue: cur.value });
             } else {
-              const adjustedTime = new Date(pt.getTime() - avgInt + avgInt);
+              const adjustedTime = new Date(pt.getTime() - gapAvgInt + gapAvgInt);
               complete.push({ x: adjustedTime.getTime(), y: cur.value, isProjected: false, isHollow: false });
             }
           } else if (isOverLimit) {
             // Punto sobre límite sin gap previo
-            const tolerance = (tco / 2) * 1000;
+            const tolerance = (currentTCO / 2) * 1000;
             const coincidentIndices = [];
             
             for (let idx = complete.length - 1; idx >= 0; idx--) {
@@ -773,7 +978,7 @@
               complete.splice(idx, 1);
             }
             
-            complete.push({ x: cur.datetime.getTime(), y: tco, isProjected: false, isHollow: true, realValue: cur.value });
+            complete.push({ x: cur.datetime.getTime(), y: currentTCO, isProjected: false, isHollow: true, realValue: cur.value });
           } else {
             // Sin gap ni sobre límite
             complete.push({ x: cur.datetime.getTime(), y: cur.value, isProjected: false, isHollow: false });
@@ -781,7 +986,7 @@
         } else {
           // Primer punto
           if (isOverLimit) {
-            complete.push({ x: cur.datetime.getTime(), y: tco, isProjected: false, isHollow: true, realValue: cur.value });
+            complete.push({ x: cur.datetime.getTime(), y: currentTCO, isProjected: false, isHollow: true, realValue: cur.value });
           } else {
             complete.push({ x: cur.datetime.getTime(), y: cur.value, isProjected: false, isHollow: false });
           }
@@ -807,18 +1012,27 @@
         }
       });
       
-      // Proyecciones
+      // Proyecciones hasta ahora
       const now = new Date(), since = now - lastRealTime;
-      if (since > avgInt * 3) {
-        let pt = new Date(lastRealTime.getTime() + avgInt);
+      // TCO del último punto para calcular si hay gap
+      const lastTCO = getTCOForTimestamp(lastRealTime ? lastRealTime.getTime() : now.getTime(), eq);
+      const lastAvgInt = lastTCO * 1000;
+      
+      if (since > lastAvgInt * 3) {
+        let pt = new Date(lastRealTime.getTime() + lastAvgInt);
         
         // SEGURIDAD: Limitar proyecciones
         let safetyCounter = 0;
         const MAX_PROJECTIONS = 5000;
         
         while (pt <= now && safetyCounter < MAX_PROJECTIONS) {
-          complete.push({ x: pt.getTime(), y: tco, isProjected: true, isHollow: false });
-          pt = new Date(pt.getTime() + avgInt);
+          // Usar TCO de la orden activa en cada proyección
+          const projTCO = getTCOForTimestamp(pt.getTime(), eq);
+          complete.push({ x: pt.getTime(), y: projTCO, isProjected: true, isHollow: false });
+          
+          // Incrementar usando el TCO de la siguiente proyección
+          const nextProjTCO = getTCOForTimestamp(pt.getTime() + 1000, eq); // +1 segundo para ver siguiente orden
+          pt = new Date(pt.getTime() + (nextProjTCO * 1000));
           safetyCounter++;
         }
         
@@ -892,8 +1106,94 @@
       const ctx = document.getElementById(`chart-${eq}`).getContext('2d');
       
       // Configurar anotaciones para líneas verticales y línea TCO
-      const annotations = {
-        tcoLine: {
+      const annotations = {};
+      
+      // Filtrar órdenes de fabricación para este equipo específico
+      // Combinar órdenes del equipo + órdenes 'ALL' (que aplican a todos)
+      const specificOrders = fabricationOrders[eq] || [];
+      const allOrders = fabricationOrders['ALL'] || [];
+      const equipmentOrders = [...specificOrders, ...allOrders];
+      
+      // Agregar líneas TCO dinámicas y marcadores de órdenes de fabricación
+      if (equipmentOrders.length > 0) {
+        equipmentOrders.forEach((order, idx) => {
+          // Línea vertical roja al inicio de la orden
+          annotations[`orderStart${idx}`] = {
+            type: 'line',
+            xMin: order.startTime,
+            xMax: order.startTime,
+            borderColor: '#ef4444',
+            borderWidth: 3,
+            label: {
+              content: `Orden ${order.orderNum}`,
+              enabled: true,
+              position: 'start',
+              yAdjust: -10,
+              backgroundColor: 'rgba(239, 68, 68, 0.9)',
+              color: '#fff',
+              font: { size: 11, weight: 'bold' }
+            }
+          };
+          
+          // Línea TCO horizontal de la orden (desde inicio hasta fin de orden)
+          annotations[`orderTCO${idx}`] = {
+            type: 'line',
+            xMin: order.startTime,
+            xMax: order.endTime,
+            yMin: order.tco,
+            yMax: order.tco,
+            borderColor: '#3b82f6',
+            borderWidth: 2,
+            borderDash: [10, 5],
+            label: {
+              content: `TCO: ${order.tco}s`,
+              enabled: true,
+              position: 'center',
+              backgroundColor: 'rgba(59, 130, 246, 0.8)',
+              color: '#fff',
+              font: { size: 10 }
+            }
+          };
+          
+          // Tooltip con información de la orden (box a la izquierda de la línea)
+          annotations[`orderInfo${idx}`] = {
+            type: 'label',
+            xValue: order.startTime,
+            yValue: (ctx) => {
+              const yScale = ctx.chart.scales.y;
+              return yScale.max * 0.85; // 85% de la altura
+            },
+            xAdjust: -140,
+            content: (ctx) => {
+              // Calcular producción real para esta orden
+              const allData = ctx.chart.data.datasets[0].data || [];
+              const orderPoints = allData.filter(d => 
+                !d.isProjected && d.x >= order.startTime && d.x < order.endTime
+              );
+              const unitsProduced = orderPoints.length;
+              const avgTCO = orderPoints.length > 0
+                ? Math.round(orderPoints.reduce((sum, d) => sum + (d.realValue || d.y), 0) / orderPoints.length)
+                : 0;
+              
+              return [
+                `Orden ${order.orderNum}`,
+                `Modelo: ${order.model}`,
+                `Inicio: ${new Date(order.startTime).toLocaleDateString('es-AR', {day: '2-digit', month: '2-digit'})}`,
+                `Unidades: ${unitsProduced} de ${order.quantity}`,
+                `TCO: ${order.tco}s (orden) / ${avgTCO}s (real)`
+              ];
+            },
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+            color: '#fff',
+            font: { size: 10, family: 'monospace' },
+            padding: 10,
+            borderRadius: 6,
+            textAlign: 'left'
+          };
+        });
+      } else {
+        // Si no hay órdenes, usar TCO estático del config
+        annotations.tcoLine = {
           type: 'line',
           yMin: tco,
           yMax: tco,
@@ -901,17 +1201,15 @@
           borderWidth: 1,
           borderDash: [5, 5],
           label: {
-            content: MACHINE_CONFIGS[currentMachineType].useGolCode 
-              ? `TCO: ${tco} piezas` 
-              : `TCO: ${tco}s`,
+            content: `TCO: ${tco}s`,
             enabled: true,
             position: 'end',
             backgroundColor: 'rgba(251, 191, 36, 0.8)',
             color: '#000',
             font: { size: 10 }
           }
-        }
-      };
+        };
+      }
       
       verticalLines.forEach((line, idx) => {
         annotations[`vline${idx}`] = {
@@ -993,6 +1291,11 @@
                     const unit = config.useGolCode ? ' piezas' : ' seg';
                     const point = complete[c.dataIndex];
                     
+                    // Validar que point existe
+                    if (!point) {
+                      return `Valor: ${c.parsed.y}${unit}`;
+                    }
+                    
                     // Mostrar código si es TOK o TNG
                     if (point.code === 'TOK') {
                       return `✅ Aprobado: ${c.parsed.y}${unit}`;
@@ -1050,7 +1353,7 @@
                   const data = context.chart.data.datasets[0].data;
                   if (data && data.length > 0) {
                     const maxY = Math.max(...data.map(d => d.y || 0));
-                    return maxY * 1.03; // 3% más
+                    return maxY * 1.1; // 10% más
                   }
                   return undefined;
                 },
