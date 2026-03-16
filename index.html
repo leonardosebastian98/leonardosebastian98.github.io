@@ -226,6 +226,7 @@
             <option value="inyectora_km4000">Inyectora KM4000 (#92)</option>
             <option value="inyectora_cosmos">Inyectora Cosmos 1500 (#91)</option>
             <option value="balancines">Balancines (código GOL)</option>
+            <option value="test_paradas">Test Paradas</option>
           </select>
         </div>
       </div>
@@ -289,6 +290,13 @@
         tco: null, // No tiene TCO
         description: 'Golpes cada 5 minutos (código GOL)',
         isGolMode: true // Modo especial: solo mostrar valores GOL reales
+        // ordersUrl: '' ← RELLENAR URL de órdenes de fabricación aquí
+      },
+      test_paradas: {
+        csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQUiakzejD8hVPitPVD2Uff-49CFgjQbeFcJlcNhAmBmhEexMf-lIW4d2LEQn-jQYzoVYZ5wqn_yI4k/pub?gid=0&single=true&output=csv',
+        name: 'Test Paradas',
+        tco: 251,
+        description: 'Máquina de prueba para sistema de paradas'
         // ordersUrl: '' ← RELLENAR URL de órdenes de fabricación aquí
       }
     };
@@ -636,6 +644,9 @@
         acceptedCodes = [CONFIG.filterCode]; // ['TM']
       }
       
+      // Siempre aceptar código P para paradas
+      acceptedCodes.push('P');
+      
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
@@ -793,7 +804,7 @@
         <div class="chart-controls">
           <div class="control-group">
             <label>Tamaño:</label>
-            <input type="range" min="1" max="5" value="3" style="width:80px" oninput="updatePointSize('${eq}', this.value)">
+            <input type="range" min="1" max="10" value="4" style="width:80px" oninput="updatePointSize('${eq}', this.value)">
             <span id="size-${eq}">4px</span>
           </div>
           
@@ -835,6 +846,18 @@
           <div class="legend-item">
             <div class="legend-dot" style="background:#fbbf24"></div>
             <span>Perdidas</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#dc2626"></div>
+            <span>Parada insumos</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#16a34a"></div>
+            <span>Parada mtto</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#6b7280"></div>
+            <span>Parada personal</span>
           </div>
         </div>
       `;
@@ -948,12 +971,56 @@
       
       // Calcular avgInt inicial (se actualizará dinámicamente en el loop)
       const baseAvgInt = tco * 1000;
-      const validForAvg = data.filter(d => d.value <= baseMaxAllowed);
+      const validForAvg = data.filter(d => d.code !== 'P' && d.value <= baseMaxAllowed);
       const avgVal = validForAvg.length > 0 ? Math.round(validForAvg.reduce((s, d) => s + d.value, 0) / validForAvg.length) : tco;
       const complete = [];
       const verticalLines = []; // Para marcar períodos largos
       let lastRealTime = null;
       const gapMaximo = CONFIG.gapMaximo; // 7.5 horas
+      
+      // PROCESAR PARADAS: Detectar rangos P0->P1/P2/P3
+      const stopRanges = [];
+      for (let i = 0; i < data.length; i++) {
+        if (data[i].code === 'P' && data[i].value === 0) {
+          // Inicio de parada (P 0)
+          const startTime = data[i].datetime.getTime();
+          
+          // Buscar el siguiente código P
+          let endTime = null;
+          let stopType = 'yellow'; // Default: amarillo (sin clasificar)
+          
+          for (let j = i + 1; j < data.length; j++) {
+            if (data[j].code === 'P') {
+              endTime = data[j].datetime.getTime();
+              // Clasificar tipo de parada según el valor
+              if (data[j].value === 1) stopType = 'red'; // Falta de insumos
+              else if (data[j].value === 2) stopType = 'green'; // Mantenimiento
+              else if (data[j].value === 3) stopType = 'gray'; // Falta de personal
+              break;
+            }
+          }
+          
+          // Si no se encontró cierre, la parada llega hasta ahora
+          if (!endTime) {
+            endTime = new Date().getTime();
+          }
+          
+          stopRanges.push({ startTime, endTime, stopType });
+        }
+      }
+      
+      // Función helper para determinar si un timestamp está en una parada
+      function getStopType(timestamp) {
+        for (const range of stopRanges) {
+          if (timestamp > range.startTime && timestamp < range.endTime) {
+            return range.stopType;
+          }
+        }
+        return null;
+      }
+      
+      // Filtrar códigos P de los datos de producción
+      data = data.filter(d => d.code !== 'P');
       
       for (let i = 0; i < data.length; i++) {
         const cur = data[i];
@@ -1023,7 +1090,14 @@
             while (pt < targetTime && safetyCounter < MAX_YELLOW_POINTS) {
               // Usar TCO de la orden activa en cada punto amarillo
               const yellowTCO = getTCOForTimestamp(pt.getTime(), eq);
-              complete.push({ x: pt.getTime(), y: yellowTCO, isProjected: true, isHollow: false });
+              const stopType = getStopType(pt.getTime());
+              complete.push({ 
+                x: pt.getTime(), 
+                y: yellowTCO, 
+                isProjected: true, 
+                isHollow: false,
+                stopType: stopType // 'red', 'green', 'gray', o null
+              });
               
               // Incrementar usando el TCO del siguiente punto
               const nextYellowTCO = getTCOForTimestamp(pt.getTime() + 1000, eq); // +1 segundo
@@ -1125,7 +1199,14 @@
         while (pt <= now && safetyCounter < MAX_PROJECTIONS) {
           // Usar TCO de la orden activa en cada proyección
           const projTCO = getTCOForTimestamp(pt.getTime(), eq);
-          complete.push({ x: pt.getTime(), y: projTCO, isProjected: true, isHollow: false });
+          const stopType = getStopType(pt.getTime());
+          complete.push({ 
+            x: pt.getTime(), 
+            y: projTCO, 
+            isProjected: true, 
+            isHollow: false,
+            stopType: stopType
+          });
           
           // Incrementar usando el TCO de la siguiente proyección
           const nextProjTCO = getTCOForTimestamp(pt.getTime() + 1000, eq); // +1 segundo para ver siguiente orden
@@ -1159,7 +1240,13 @@
         if (d.code === 'TNG') return '#ef4444';
         // Círculos huecos = transparente
         if (d.isHollow) return 'rgba(0, 102, 255, 0)';
-        // Amarillos = proyectados
+        // Paradas con tipo específico
+        if (d.isProjected && d.stopType) {
+          if (d.stopType === 'red') return '#dc2626'; // Rojo (falta insumos)
+          if (d.stopType === 'green') return '#16a34a'; // Verde (mantenimiento)
+          if (d.stopType === 'gray') return '#6b7280'; // Gris (falta personal)
+        }
+        // Amarillos = proyectados sin clasificar
         if (d.isProjected) return '#fbbf24';
         // TOK o normal = azul
         return '#0066ff';
@@ -1170,6 +1257,12 @@
         if (d.code === 'TNG') return '#ef4444';
         // Círculos huecos = borde azul
         if (d.isHollow) return '#0066ff';
+        // Paradas con tipo específico
+        if (d.isProjected && d.stopType) {
+          if (d.stopType === 'red') return '#dc2626';
+          if (d.stopType === 'green') return '#16a34a';
+          if (d.stopType === 'gray') return '#6b7280';
+        }
         // Amarillos = amarillo
         if (d.isProjected) return '#fbbf24';
         // TOK o normal = azul
@@ -1904,13 +1997,21 @@
       const yellowsInSelection = inSelection.filter(d => d.isProjected && !d.isHollow);
       
       let validYellows = 0;
+      let redStops = 0; // Paradas por insumos
+      let greenStops = 0; // Paradas por mantenimiento
+      let grayStops = 0; // Paradas por personal
+      
       for (const yellow of yellowsInSelection) {
         // Buscar punto azul antes y después
         const beforeBlue = data.find(d => !d.isProjected && d.x < yellow.x && d.x >= x1);
         const afterBlue = data.find(d => !d.isProjected && d.x > yellow.x && d.x <= x2);
         
         if (beforeBlue && afterBlue) {
-          validYellows++;
+          // Contar según tipo de parada
+          if (yellow.stopType === 'red') redStops++;
+          else if (yellow.stopType === 'green') greenStops++;
+          else if (yellow.stopType === 'gray') grayStops++;
+          else validYellows++; // Amarillos normales
         }
       }
       
@@ -1936,7 +2037,7 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
             <h4 style="margin: 0;">📊 Resumen de Selección</h4>
             <div style="display: flex; gap: 8px;">
-              <button onclick="copySummary('${eq}', '${startDate}', '${endDate}', ${hours}, ${minutes}, ${processes.length}, ${validYellows}, '${avg}', ${min}, ${max})" style="padding: 4px 12px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;" title="Copiar al portapapeles">📋 Copiar</button>
+              <button onclick="copySummary('${eq}', '${startDate}', '${endDate}', ${hours}, ${minutes}, ${processes.length}, ${validYellows}, ${redStops}, ${greenStops}, ${grayStops}, '${avg}', ${min}, ${max})" style="padding: 4px 12px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;" title="Copiar al portapapeles">📋 Copiar</button>
               <button onclick="zoomToSelection('${eq}', ${x1}, ${x2})" style="padding: 4px 12px; background: #0066ff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">🔍 Zoom</button>
               <button onclick="resetZoom('${eq}')" style="padding: 4px 12px; background: #666; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">↺ Reset</button>
             </div>
@@ -1958,6 +2059,18 @@
             <div class="summary-stat">
               <div class="summary-stat-label">Piezas Perdidas</div>
               <div class="summary-stat-value" style="color: #fbbf24;">${validYellows}</div>
+            </div>
+            <div class="summary-stat">
+              <div class="summary-stat-label">Parada Insumos</div>
+              <div class="summary-stat-value" style="color: #dc2626;">${redStops}</div>
+            </div>
+            <div class="summary-stat">
+              <div class="summary-stat-label">Parada Mtto</div>
+              <div class="summary-stat-value" style="color: #16a34a;">${greenStops}</div>
+            </div>
+            <div class="summary-stat">
+              <div class="summary-stat-label">Parada Personal</div>
+              <div class="summary-stat-value" style="color: #6b7280;">${grayStops}</div>
             </div>
             <div class="summary-stat">
               <div class="summary-stat-label">Promedio</div>
@@ -1989,7 +2102,7 @@
       updateEquipmentChart(eq);
     }
     
-    function copySummary(eq, startDate, endDate, hours, minutes, processes, lost, avg, min, max) {
+    function copySummary(eq, startDate, endDate, hours, minutes, processes, lost, redStops, greenStops, grayStops, avg, min, max) {
       const config = MACHINE_CONFIGS[currentMachineType];
       const summaryText = `📊 Resumen de Selección - Equipo ${eq}
 ══════════════════════════════════════
@@ -2002,6 +2115,9 @@ Período:
 Estadísticas:
   Procesos: ${processes}
   Piezas Perdidas: ${lost}
+  Parada Insumos: ${redStops}
+  Parada Mantenimiento: ${greenStops}
+  Parada Personal: ${grayStops}
   Promedio: ${avg}s
   Mínimo: ${min}s
   Máximo: ${max}s
