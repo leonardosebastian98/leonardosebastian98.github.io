@@ -303,6 +303,64 @@
     let equipmentSettings = {}; // Configuración individual por equipo
     let dragSelectInitialized = {}; // Evitar event listeners duplicados
     let fabricationOrders = {}; // Órdenes de fabricación por equipo
+    let showOrderTooltips = true; // Toggle para mostrar/ocultar tooltips de OF
+    
+    // Mapeo de equipos a nombres reales por tipo de máquina
+    const EQUIPMENT_NAMES = {
+      armadoras: {
+        // Dejar vacío para usar índices dinámicos (Armadora 1, 2, 3...)
+        // O agregar mapeos personalizados:
+        // '221': 'Armadora Custom',
+      },
+      expansoras: {
+        // Agregar mapeo de expansoras si es necesario
+      },
+      boquilladoras: {
+        // Agregar mapeo de boquilladoras si es necesario
+      },
+      engrafadoras: {
+        // Agregar mapeo de engrafadoras si es necesario
+      },
+      tester: {
+        // Agregar mapeo de testers si es necesario
+      },
+      inyectora_km4000: {
+        '92': 'Inyectora KM4000'
+      },
+      inyectora_cosmos: {
+        '91': 'Inyectora Cosmos 1500'
+      },
+      balancines: {
+        // Agregar mapeo de balancines si es necesario
+      }
+    };
+    
+    // Función para obtener el nombre formateado del equipo
+    function getEquipmentName(eq) {
+      const config = MACHINE_CONFIGS[currentMachineType];
+      const settings = equipmentSettings[eq];
+      const mappings = EQUIPMENT_NAMES[currentMachineType] || {};
+      const customName = mappings[eq];
+      
+      // Para máquinas únicas (inyectoras, etc.), no agregar número
+      const uniqueMachines = ['inyectora_km4000', 'inyectora_cosmos'];
+      
+      if (uniqueMachines.includes(currentMachineType)) {
+        // Máquinas únicas: usar nombre del config sin índice
+        return customName ? `${customName} (Eq ${eq})` : `${config.name} (Eq ${eq})`;
+      }
+      
+      // Máquinas múltiples:
+      if (customName) {
+        // Si hay nombre personalizado en el mapeo, usarlo
+        return `${customName} (Eq ${eq})`;
+      } else {
+        // Si NO hay mapeo, usar índice dinámico
+        const index = settings?.index || 1;
+        const baseName = config.name.endsWith('s') ? config.name.slice(0, -1) : config.name;
+        return `${baseName} ${index} (Eq ${eq})`;
+      }
+    }
 
     // Convertir fecha a día laboral (6am-6am)
     function toWorkDay(date) {
@@ -336,6 +394,26 @@
           const gridColor = isDark ? 'rgba(200, 200, 200, 0.15)' : 'rgba(0, 0, 0, 0.05)';
           charts[eq].options.scales.x.grid.color = gridColor;
           charts[eq].options.scales.y.grid.color = gridColor;
+          charts[eq].update('none');
+        }
+      });
+    }
+
+    function toggleOrderTooltips() {
+      showOrderTooltips = !showOrderTooltips;
+      
+      // Actualizar todos los botones de tooltips
+      Object.keys(equipmentSettings).forEach(eq => {
+        const btn = document.getElementById(`orderTooltipsBtn-${eq}`);
+        if (btn) {
+          btn.style.opacity = showOrderTooltips ? '1' : '0.5';
+          btn.title = showOrderTooltips ? 'Ocultar tooltips de órdenes' : 'Mostrar tooltips de órdenes';
+        }
+      });
+      
+      // Re-renderizar todos los gráficos para actualizar tooltips
+      Object.keys(charts).forEach(eq => {
+        if (charts[eq]) {
           charts[eq].update('none');
         }
       });
@@ -644,11 +722,27 @@
     }
 
     function renderEquipmentCharts() {
-      const cont = document.getElementById('equipmentContainer'), eqs = Object.keys(equipmentData).sort();
-      if (eqs.length === 0) {
+      const cont = document.getElementById('equipmentContainer');
+      let allEqs = Object.keys(equipmentData).sort();
+      
+      if (allEqs.length === 0) {
         cont.innerHTML = '<div class="no-data">No hay datos</div>';
         return;
       }
+      
+      // FILTRO BACKEND: Solo equipos con datos (showEmpty = false por defecto)
+      const showEmpty = false; // true = mostrar todos, false = solo con datos
+      const eqs = showEmpty 
+        ? allEqs 
+        : allEqs.filter(eq => equipmentData[eq] && equipmentData[eq].length > 0);
+      
+      // Mapear equipos a índices (para nombres como "Armadora 1, 2, 3...")
+      const equipmentIndex = {};
+      let counter = 1;
+      eqs.forEach(eq => {
+        equipmentIndex[eq] = counter++;
+      });
+      
       eqs.forEach(eq => {
         if (!document.getElementById(`equipment-${eq}`)) {
           // Inicializar configuración del equipo
@@ -659,10 +753,12 @@
             dateTo: null,
             selection: null,
             zoomStart: null,
-            zoomEnd: null
+            zoomEnd: null,
+            index: equipmentIndex[eq] // Guardar índice para usar en nombres
           };
           cont.appendChild(createEquipmentCard(eq));
         }
+        
         updateEquipmentChart(eq);
       });
     }
@@ -681,7 +777,7 @@
       
       card.innerHTML = `
         <div class="equipment-header">
-          <div class="equipment-title">Equipo ${eq}</div>
+          <div class="equipment-title">${getEquipmentName(eq)}</div>
           <div class="equipment-stats">
             <div class="stat-item">
               <div class="stat-value" id="stat-total-${eq}">0</div>
@@ -697,7 +793,7 @@
         <div class="chart-controls">
           <div class="control-group">
             <label>Tamaño:</label>
-            <input type="range" min="1" max="10" value="4" style="width:80px" oninput="updatePointSize('${eq}', this.value)">
+            <input type="range" min="1" max="5" value="3" style="width:80px" oninput="updatePointSize('${eq}', this.value)">
             <span id="size-${eq}">4px</span>
           </div>
           
@@ -707,6 +803,7 @@
             <button class="time-btn" onclick="setTimeFilter('${eq}', 720)">12H</button>
             <button class="time-btn active" onclick="setTimeFilter('${eq}', 1440)">24H</button>
             <button class="time-btn" onclick="setTimeFilter('${eq}', 10080)">SEMANA</button>
+            <button class="time-btn" onclick="toggleOrderTooltips()" id="orderTooltipsBtn-${eq}" title="Mostrar/ocultar tooltips de órdenes">📋</button>
           </div>
           
           <div class="date-inputs">
@@ -1164,6 +1261,7 @@
               return yScale.max * 0.85; // 85% de la altura
             },
             xAdjust: -140,
+            display: (ctx) => showOrderTooltips, // Toggle para mostrar/ocultar
             content: (ctx) => {
               // Calcular producción real para esta orden
               const allData = ctx.chart.data.datasets[0].data || [];
@@ -1175,10 +1273,14 @@
                 ? Math.round(orderPoints.reduce((sum, d) => sum + (d.realValue || d.y), 0) / orderPoints.length)
                 : 0;
               
+              const startDate = new Date(order.startTime);
+              const startDateStr = startDate.toLocaleDateString('es-AR', {day: '2-digit', month: '2-digit'});
+              const startTimeStr = startDate.toLocaleTimeString('es-AR', {hour: '2-digit', minute: '2-digit', hour12: false});
+              
               return [
                 `Orden ${order.orderNum}`,
                 `Modelo: ${order.model}`,
-                `Inicio: ${new Date(order.startTime).toLocaleDateString('es-AR', {day: '2-digit', month: '2-digit'})}`,
+                `Inicio: ${startDateStr} ${startTimeStr}`,
                 `Unidades: ${unitsProduced} de ${order.quantity}`,
                 `TCO: ${order.tco}s (orden) / ${avgTCO}s (real)`
               ];
@@ -1834,6 +1936,7 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
             <h4 style="margin: 0;">📊 Resumen de Selección</h4>
             <div style="display: flex; gap: 8px;">
+              <button onclick="copySummary('${eq}', '${startDate}', '${endDate}', ${hours}, ${minutes}, ${processes.length}, ${validYellows}, '${avg}', ${min}, ${max})" style="padding: 4px 12px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;" title="Copiar al portapapeles">📋 Copiar</button>
               <button onclick="zoomToSelection('${eq}', ${x1}, ${x2})" style="padding: 4px 12px; background: #0066ff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">🔍 Zoom</button>
               <button onclick="resetZoom('${eq}')" style="padding: 4px 12px; background: #666; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">↺ Reset</button>
             </div>
@@ -1884,6 +1987,42 @@
       equipmentSettings[eq].zoomEnd = null;
       document.getElementById(`summary-${eq}`).innerHTML = '';
       updateEquipmentChart(eq);
+    }
+    
+    function copySummary(eq, startDate, endDate, hours, minutes, processes, lost, avg, min, max) {
+      const config = MACHINE_CONFIGS[currentMachineType];
+      const summaryText = `📊 Resumen de Selección - Equipo ${eq}
+══════════════════════════════════════
+
+Período:
+  Desde: ${startDate}
+  Hasta: ${endDate}
+  Duración: ${hours}h ${minutes}m
+
+Estadísticas:
+  Procesos: ${processes}
+  Piezas Perdidas: ${lost}
+  Promedio: ${avg}s
+  Mínimo: ${min}s
+  Máximo: ${max}s
+
+Máquina: ${config.name}
+Generado: ${new Date().toLocaleString('es-AR')}`;
+
+      navigator.clipboard.writeText(summaryText).then(() => {
+        // Feedback visual
+        const btn = event.target;
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '✓ Copiado';
+        btn.style.background = '#059669';
+        setTimeout(() => {
+          btn.innerHTML = originalText;
+          btn.style.background = '#10b981';
+        }, 2000);
+      }).catch(err => {
+        console.error('Error al copiar:', err);
+        alert('No se pudo copiar al portapapeles');
+      });
     }
 
     setInterval(() => loadData(), CONFIG.updateInterval);
