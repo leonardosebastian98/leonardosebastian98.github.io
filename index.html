@@ -859,6 +859,10 @@
             <div class="legend-dot" style="background:#6b7280"></div>
             <span>Parada personal</span>
           </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#3b82f6"></div>
+            <span>Parada setup</span>
+          </div>
         </div>
       `;
       return card;
@@ -996,6 +1000,7 @@
               if (data[j].value === 1) stopType = 'red'; // Falta de insumos
               else if (data[j].value === 2) stopType = 'green'; // Mantenimiento
               else if (data[j].value === 3) stopType = 'gray'; // Falta de personal
+              else if (data[j].value === 4) stopType = 'blue'; // Setup
               break;
             }
           }
@@ -1245,6 +1250,7 @@
           if (d.stopType === 'red') return '#dc2626'; // Rojo (falta insumos)
           if (d.stopType === 'green') return '#16a34a'; // Verde (mantenimiento)
           if (d.stopType === 'gray') return '#6b7280'; // Gris (falta personal)
+          if (d.stopType === 'blue') return '#3b82f6'; // Azul claro (setup)
         }
         // Amarillos = proyectados sin clasificar
         if (d.isProjected) return '#fbbf24';
@@ -1262,6 +1268,7 @@
           if (d.stopType === 'red') return '#dc2626';
           if (d.stopType === 'green') return '#16a34a';
           if (d.stopType === 'gray') return '#6b7280';
+          if (d.stopType === 'blue') return '#3b82f6';
         }
         // Amarillos = amarillo
         if (d.isProjected) return '#fbbf24';
@@ -1375,7 +1382,8 @@
                 `Modelo: ${order.model}`,
                 `Inicio: ${startDateStr} ${startTimeStr}`,
                 `Unidades: ${unitsProduced} de ${order.quantity}`,
-                `TCO: ${order.tco}s (orden) / ${avgTCO}s (real)`
+                `TCO: ${order.tco}s (orden) / ${avgTCO}s (real)`,
+                `[Click para zoom]` // Indicador de que es clickeable
               ];
             },
             backgroundColor: 'rgba(0, 0, 0, 0.9)',
@@ -1383,7 +1391,13 @@
             font: { size: 10, family: 'monospace' },
             padding: 10,
             borderRadius: 6,
-            textAlign: 'left'
+            textAlign: 'left',
+            // Guardar referencia de la orden para el click handler
+            orderData: {
+              eq: eq,
+              startTime: order.startTime,
+              endTime: order.endTime
+            }
           };
         });
       } else {
@@ -1608,6 +1622,9 @@
         
         // Agregar drag-select
         setupDragSelect(eq);
+        
+        // Agregar click handler para tooltips de órdenes
+        setupOrderTooltipClick(eq);
       }
       
       // Actualizar estadísticas basadas en lo visible en el viewport actual
@@ -1802,6 +1819,59 @@
       }
     }
 
+    function setupOrderTooltipClick(eq) {
+      const canvas = document.getElementById(`chart-${eq}`);
+      const chart = charts[eq];
+      
+      canvas.addEventListener('click', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // Verificar si hay órdenes de fabricación
+        if (!fabricationOrders[eq] && !fabricationOrders['ALL']) return;
+        
+        const specificOrders = fabricationOrders[eq] || [];
+        const allOrders = fabricationOrders['ALL'] || [];
+        const equipmentOrders = [...specificOrders, ...allOrders];
+        
+        // Buscar si el click fue en algún tooltip de orden
+        for (const order of equipmentOrders) {
+          const xScale = chart.scales.x;
+          const yScale = chart.scales.y;
+          
+          // Posición del tooltip
+          const tooltipX = xScale.getPixelForValue(order.startTime) - 140; // xAdjust
+          const tooltipY = yScale.getPixelForValue(yScale.max * 0.85); // yValue
+          
+          // Dimensiones aproximadas del tooltip (6 líneas × 10px + padding)
+          const tooltipWidth = 280;
+          const tooltipHeight = 90;
+          
+          // Verificar si el click está dentro del tooltip
+          if (x >= tooltipX && x <= tooltipX + tooltipWidth &&
+              y >= tooltipY - tooltipHeight/2 && y <= tooltipY + tooltipHeight/2) {
+            
+            // Hacer zoom a la orden
+            zoomToOrder(eq, order.startTime, order.endTime);
+            return;
+          }
+        }
+      });
+    }
+    
+    function zoomToOrder(eq, startTime, endTime) {
+      // Aplicar zoom
+      equipmentSettings[eq].zoomStart = startTime;
+      equipmentSettings[eq].zoomEnd = endTime;
+      updateEquipmentChart(eq);
+      
+      // Mostrar resumen automáticamente
+      const chart = charts[eq];
+      const yScale = chart.scales.y;
+      showSummary(eq, startTime, endTime, yScale.min, yScale.max);
+    }
+
     function setupDragSelect(eq) {
       // Evitar agregar event listeners múltiples veces
       if (dragSelectInitialized[eq]) return;
@@ -1810,6 +1880,48 @@
       const wrapper = document.getElementById(`wrapper-${eq}`);
       const canvas = document.getElementById(`chart-${eq}`);
       let isDragging = false, isRightDrag = false, startX, startY, selectionBox, selectionTooltip;
+      
+      // Click para zoom en tooltips de OF
+      wrapper.addEventListener('click', (e) => {
+        if (e.button !== 0) return; // Solo click izquierdo
+        
+        const chart = charts[eq];
+        if (!chart || !showOrderTooltips) return;
+        
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // Verificar si el click está en algún tooltip de orden
+        const annotations = chart.options.plugins.annotation.annotations;
+        
+        for (const key in annotations) {
+          if (key.startsWith('orderInfo') && annotations[key].orderData) {
+            const annotation = annotations[key];
+            const order = annotation.orderData;
+            
+            // Calcular posición del tooltip
+            const xScale = chart.scales.x;
+            const yScale = chart.scales.y;
+            
+            const tooltipX = xScale.getPixelForValue(order.startTime) + (annotation.xAdjust || 0);
+            const tooltipY = yScale.max * 0.85;
+            const tooltipYPixel = yScale.getPixelForValue(tooltipY);
+            
+            // Dimensiones aproximadas del tooltip (140px ancho, ~100px alto)
+            const tooltipWidth = 140;
+            const tooltipHeight = 100;
+            
+            if (x >= tooltipX && x <= tooltipX + tooltipWidth &&
+                y >= tooltipYPixel - tooltipHeight && y <= tooltipYPixel) {
+              // Click en el tooltip - hacer zoom a la orden
+              zoomToOrder(eq, order);
+              e.stopPropagation();
+              return;
+            }
+          }
+        }
+      });
       
       // Click-drag con botón derecho para scroll horizontal
       wrapper.addEventListener('contextmenu', (e) => {
@@ -1997,21 +2109,67 @@
       const yellowsInSelection = inSelection.filter(d => d.isProjected && !d.isHollow);
       
       let validYellows = 0;
-      let redStops = 0; // Paradas por insumos
-      let greenStops = 0; // Paradas por mantenimiento
-      let grayStops = 0; // Paradas por personal
+      let redStops = { count: 0, time: 0 }; // Paradas por insumos
+      let greenStops = { count: 0, time: 0 }; // Paradas por mantenimiento
+      let grayStops = { count: 0, time: 0 }; // Paradas por personal
+      let blueStops = { count: 0, time: 0 }; // Paradas por setup
+      
+      // Agrupar paradas consecutivas del mismo tipo
+      const stopGroups = [];
+      let currentGroup = null;
       
       for (const yellow of yellowsInSelection) {
-        // Buscar punto azul antes y después
         const beforeBlue = data.find(d => !d.isProjected && d.x < yellow.x && d.x >= x1);
         const afterBlue = data.find(d => !d.isProjected && d.x > yellow.x && d.x <= x2);
         
         if (beforeBlue && afterBlue) {
-          // Contar según tipo de parada
-          if (yellow.stopType === 'red') redStops++;
-          else if (yellow.stopType === 'green') greenStops++;
-          else if (yellow.stopType === 'gray') grayStops++;
-          else validYellows++; // Amarillos normales
+          if (yellow.stopType) {
+            // Si es una parada con tipo
+            if (!currentGroup || currentGroup.type !== yellow.stopType) {
+              // Iniciar nuevo grupo
+              if (currentGroup) stopGroups.push(currentGroup);
+              currentGroup = {
+                type: yellow.stopType,
+                startX: yellow.x,
+                endX: yellow.x,
+                count: 1
+              };
+            } else {
+              // Continuar grupo actual
+              currentGroup.endX = yellow.x;
+              currentGroup.count++;
+            }
+          } else {
+            // Amarillo normal
+            if (currentGroup) {
+              stopGroups.push(currentGroup);
+              currentGroup = null;
+            }
+            validYellows++;
+          }
+        }
+      }
+      
+      // Agregar último grupo si existe
+      if (currentGroup) stopGroups.push(currentGroup);
+      
+      // Calcular estadísticas por tipo de parada
+      for (const group of stopGroups) {
+        const timeMs = group.endX - group.startX;
+        const timeMinutes = Math.round(timeMs / 1000 / 60);
+        
+        if (group.type === 'red') {
+          redStops.count += group.count;
+          redStops.time += timeMinutes;
+        } else if (group.type === 'green') {
+          greenStops.count += group.count;
+          greenStops.time += timeMinutes;
+        } else if (group.type === 'gray') {
+          grayStops.count += group.count;
+          grayStops.time += timeMinutes;
+        } else if (group.type === 'blue') {
+          blueStops.count += group.count;
+          blueStops.time += timeMinutes;
         }
       }
       
@@ -2037,7 +2195,7 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
             <h4 style="margin: 0;">📊 Resumen de Selección</h4>
             <div style="display: flex; gap: 8px;">
-              <button onclick="copySummary('${eq}', '${startDate}', '${endDate}', ${hours}, ${minutes}, ${processes.length}, ${validYellows}, ${redStops}, ${greenStops}, ${grayStops}, '${avg}', ${min}, ${max})" style="padding: 4px 12px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;" title="Copiar al portapapeles">📋 Copiar</button>
+              <button onclick='copySummary("${eq}", "${startDate}", "${endDate}", ${hours}, ${minutes}, ${processes.length}, ${validYellows}, ${JSON.stringify(redStops)}, ${JSON.stringify(greenStops)}, ${JSON.stringify(grayStops)}, ${JSON.stringify(blueStops)}, "${avg}", ${min}, ${max})' style="padding: 4px 12px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;" title="Copiar al portapapeles">📋 Copiar</button>
               <button onclick="zoomToSelection('${eq}', ${x1}, ${x2})" style="padding: 4px 12px; background: #0066ff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">🔍 Zoom</button>
               <button onclick="resetZoom('${eq}')" style="padding: 4px 12px; background: #666; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">↺ Reset</button>
             </div>
@@ -2062,15 +2220,19 @@
             </div>
             <div class="summary-stat">
               <div class="summary-stat-label">Parada Insumos</div>
-              <div class="summary-stat-value" style="color: #dc2626;">${redStops}</div>
+              <div class="summary-stat-value" style="color: #dc2626;">${redStops.count} uds / ${redStops.time}m</div>
             </div>
             <div class="summary-stat">
               <div class="summary-stat-label">Parada Mtto</div>
-              <div class="summary-stat-value" style="color: #16a34a;">${greenStops}</div>
+              <div class="summary-stat-value" style="color: #16a34a;">${greenStops.count} uds / ${greenStops.time}m</div>
             </div>
             <div class="summary-stat">
               <div class="summary-stat-label">Parada Personal</div>
-              <div class="summary-stat-value" style="color: #6b7280;">${grayStops}</div>
+              <div class="summary-stat-value" style="color: #6b7280;">${grayStops.count} uds / ${grayStops.time}m</div>
+            </div>
+            <div class="summary-stat">
+              <div class="summary-stat-label">Parada Setup</div>
+              <div class="summary-stat-value" style="color: #3b82f6;">${blueStops.count} uds / ${blueStops.time}m</div>
             </div>
             <div class="summary-stat">
               <div class="summary-stat-label">Promedio</div>
@@ -2089,6 +2251,27 @@
       `;
     }
 
+    function zoomToOrder(eq, order) {
+      // Hacer zoom a la orden
+      equipmentSettings[eq].zoomStart = order.startTime;
+      equipmentSettings[eq].zoomEnd = order.endTime;
+      updateEquipmentChart(eq);
+      
+      // Mostrar resumen automático de la orden
+      const chart = charts[eq];
+      if (!chart) return;
+      
+      const xScale = chart.scales.x;
+      const yScale = chart.scales.y;
+      
+      const x1 = order.startTime;
+      const x2 = order.endTime;
+      const y1 = yScale.min;
+      const y2 = yScale.max;
+      
+      showSummary(eq, x1, x2, y1, y2);
+    }
+
     function zoomToSelection(eq, x1, x2) {
       equipmentSettings[eq].zoomStart = x1;
       equipmentSettings[eq].zoomEnd = x2;
@@ -2102,8 +2285,13 @@
       updateEquipmentChart(eq);
     }
     
-    function copySummary(eq, startDate, endDate, hours, minutes, processes, lost, redStops, greenStops, grayStops, avg, min, max) {
+    function copySummary(eq, startDate, endDate, hours, minutes, processes, lost, redStopsStr, greenStopsStr, grayStopsStr, blueStopsStr, avg, min, max) {
       const config = MACHINE_CONFIGS[currentMachineType];
+      const redStops = JSON.parse(redStopsStr);
+      const greenStops = JSON.parse(greenStopsStr);
+      const grayStops = JSON.parse(grayStopsStr);
+      const blueStops = JSON.parse(blueStopsStr);
+      
       const summaryText = `📊 Resumen de Selección - Equipo ${eq}
 ══════════════════════════════════════
 
@@ -2115,9 +2303,10 @@ Período:
 Estadísticas:
   Procesos: ${processes}
   Piezas Perdidas: ${lost}
-  Parada Insumos: ${redStops}
-  Parada Mantenimiento: ${greenStops}
-  Parada Personal: ${grayStops}
+  Parada Insumos: ${redStops.count} uds / ${redStops.time}m
+  Parada Mantenimiento: ${greenStops.count} uds / ${greenStops.time}m
+  Parada Personal: ${grayStops.count} uds / ${grayStops.time}m
+  Parada Setup: ${blueStops.count} uds / ${blueStops.time}m
   Promedio: ${avg}s
   Mínimo: ${min}s
   Máximo: ${max}s
