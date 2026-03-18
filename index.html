@@ -240,7 +240,7 @@
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQVrHs_GXmZGUMaOBjo4zr6mtNbFpf45WZ916Bj6LktK0i1F1gofWV_dnZfjam7MAbhDoQap_nZryeO/pub?gid=0&single=true&output=csv',
         name: 'Armadoras',
         tco: 240,
-        ordersUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTyP9OJFSP2WnhhxVT5QW_4Q7yJvEXbu8gZq0V6n5rupZKAzq6NJg_HLUcvAEjO82NoDGdRS7RlYfvp/pub?gid=0&single=true&output=csv'
+        ordersUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQy3zOaMDgS6L55fLDtRZLJAHZgoOkseNx-VQAfrCJZD1j6s9UgAvxqFGmuBT6yxBs75wKSU4KosVGO/pub?output=csv'
       },
       expansoras: {
         csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRkBYlgzc71g76k03IhGUA29lNMKjJl1rgB9WwzXcxT4uHgvzsySXs5tAuQHqQKglMLFgao6u4enqPC/pub?gid=0&single=true&output=csv',
@@ -523,15 +523,39 @@
         if (!line) continue;
         
         const parts = line.split(',');
-        if (parts.length < 6) continue;
+        if (parts.length < 8) continue;
         
-        const orderNum = parts[0]?.trim();
-        const model = parts[1]?.trim();
-        const quantity = parseInt(parts[2]?.trim()) || 0;
-        const tco = parseInt(parts[3]?.trim()) || 0;
-        const date = parts[4]?.trim();
-        const time = parts[5]?.trim();
-        const machineColumn = parts[6]?.trim() || ''; // Nueva columna Maquina
+        // Nuevo formato CSV:
+        // IDRecepcion, Material, Cantidad Prevista, Ciclo x Unidad (Segundos), Categoria, Fecha, Hora, Maquina
+        const orderNum = parts[0]?.trim();  // IDRecepcion
+        const model = parts[1]?.trim();     // Material
+        const quantity = parseInt(parts[2]?.trim()) || 0;  // Cantidad Prevista
+        const tco = parseInt(parts[3]?.trim()) || 0;       // Ciclo x Unidad (Segundos)
+        // parts[4] = Categoria (no usado por ahora)
+        const date = parts[5]?.trim();      // Fecha
+        const timeStr = parts[6]?.trim();   // Hora (formato 12:00:00 p.m. o 1:00:00 a.m.)
+        const machineColumn = parts[7]?.trim() || ''; // Maquina
+        
+        // Parsear hora con formato AM/PM
+        let time = timeStr;
+        if (timeStr) {
+          // Convertir "12:00:00 p.m." a "12:00:00"
+          time = timeStr.replace(/\s*(a\.m\.|p\.m\.)/gi, '').trim();
+          
+          // Verificar si es PM y no es 12 PM
+          const isPM = /p\.m\./i.test(timeStr);
+          const isAM = /a\.m\./i.test(timeStr);
+          const timeParts = time.split(':');
+          let hours = parseInt(timeParts[0]);
+          
+          if (isPM && hours !== 12) {
+            hours += 12; // Convertir PM a formato 24h
+          } else if (isAM && hours === 12) {
+            hours = 0; // 12 AM = 00:00
+          }
+          
+          time = `${hours.toString().padStart(2, '0')}:${timeParts[1]}:${timeParts[2]}`;
+        }
         
         const datetime = parseDateTime(date, time);
         if (datetime && orderNum) {
@@ -1360,7 +1384,7 @@
               const yScale = ctx.chart.scales.y;
               return yScale.max * 0.85; // 85% de la altura
             },
-            xAdjust: -140,
+            xAdjust: 10, // A la derecha de la línea
             display: (ctx) => showOrderTooltips, // Toggle para mostrar/ocultar
             content: (ctx) => {
               // Calcular producción real para esta orden
@@ -1841,7 +1865,7 @@
           const yScale = chart.scales.y;
           
           // Posición del tooltip
-          const tooltipX = xScale.getPixelForValue(order.startTime) - 140; // xAdjust
+          const tooltipX = xScale.getPixelForValue(order.startTime) + 10; // xAdjust (a la derecha)
           const tooltipY = yScale.getPixelForValue(yScale.max * 0.85); // yValue
           
           // Dimensiones aproximadas del tooltip (6 líneas × 10px + padding)
