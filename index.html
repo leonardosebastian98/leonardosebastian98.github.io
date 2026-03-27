@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitor de Producción</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/luxon/3.4.4/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<style>
+:root {
+  --bg: #111418; --surface: #1a1f26; --border: #2a3040;
+  --text: #e2e8f0; --muted: #7a8599;
+  --cyan: #1db88e; --amber: #f0a500; --red: #e24b4a;
+  --green: #22c55e; --accent: #3b82f6;
+  --font: 'Segoe UI', system-ui, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; overflow: hidden; }
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+/* ── TOOLBAR ── */
+.toolbar {
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 44px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.toolbar-title { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; }
+.tb-sep { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
+.tb-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+/* ── DROPDOWNS ── */
+.dd-wrapper { position: relative; }
+.dd-btn {
+  display: flex; align-items: center; gap: 6px; padding: 5px 10px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 5px;
+  color: var(--text); cursor: pointer; font-size: 12px;
+  white-space: nowrap; min-width: 140px; justify-content: space-between;
+}
+.dd-btn:hover { border-color: var(--accent); }
+.dd-arrow { font-size: 8px; color: var(--muted); transition: transform .18s; flex-shrink: 0; }
+.dd-open .dd-arrow { transform: rotate(180deg); }
+.dd-menu {
+  display: none; position: absolute; top: calc(100% + 3px); left: 0;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 7px;
+  min-width: 220px; z-index: 200; box-shadow: 0 10px 30px rgba(0,0,0,.6);
+  max-height: 340px; overflow-y: auto;
+}
+.dd-open .dd-menu { display: block; }
+.dd-item {
+  padding: 7px 12px; cursor: pointer; font-size: 12px; color: var(--text);
+  display: flex; align-items: center; gap: 8px;
+}
+.dd-item:hover { background: rgba(59,130,246,.15); }
+.dd-item.active { color: var(--accent); }
+.dd-check { width: 11px; font-size: 10px; color: var(--accent); flex-shrink: 0; }
+.dd-sep { height: 1px; background: var(--border); margin: 3px 0; }
+.dd-lbl { padding: 5px 12px 1px; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+
+/* ── STATUS BAR ── */
+.statusbar {
+  flex-shrink: 0; height: 30px;
+  display: flex; align-items: center; gap: 8px; padding: 0 14px;
+  font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border);
+}
+.pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: blink 2s infinite; flex-shrink: 0; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+.shift-badge {
+  font-size: 11px; color: var(--muted); background: var(--bg);
+  border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px; white-space: nowrap;
+}
+.btn-ref {
+  padding: 2px 8px; background: transparent; border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text); cursor: pointer; font-size: 11px;
+}
+.btn-ref:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── TOOLBAR TOGGLE ── */
+.toolbar, .statusbar {
+  transition: max-height .22s ease, opacity .22s ease;
+  /* NO overflow:hidden here — that clips the dropdowns */
+  max-height: 60px;
+}
+/* When hidden: collapse via max-height so overflow stays visible while open */
+#app.ui-hidden .toolbar   { max-height: 0; opacity: 0; pointer-events: none; border: none; }
+#app.ui-hidden .statusbar { max-height: 0; opacity: 0; pointer-events: none; border: none; }
+#app.ui-hidden #error-bar { display: none !important; }
+
+/* Toggle button — always visible, bottom-right corner */
+#btn-toggle {
+  position: fixed; bottom: 14px; right: 14px; z-index: 300;
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--muted); font-size: 16px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, color .15s, border-color .15s;
+  box-shadow: 0 2px 10px rgba(0,0,0,.4);
+}
+#btn-toggle:hover { background: var(--bg); border-color: var(--accent); color: var(--accent); }
+
+/* ── CHARTS AREA — fills all remaining height, no scroll ── */
+#charts-area {
+  flex: 1;
+  min-height: 0;          /* critical: lets flex child shrink */
+  padding: 10px 12px;
+  display: grid;
+  gap: 10px;
+}
+
+/* ── CHART CARD — flex column, fills its grid cell ── */
+.chart-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 18px 10px; display: flex; flex-direction: column;
+  min-height: 0;           /* allow shrinking inside grid rows */
+}
+.card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px; gap: 8px; flex-shrink: 0;
+}
+.card-meta { display: flex; flex-direction: column; gap: 3px; }
+.card-title { font-size: 14px; font-weight: 700; color: var(--text); letter-spacing: .03em; text-transform: uppercase; }
+.card-sub   { font-size: 14px; color: var(--muted); }
+.card-kpis  { display: flex; gap: 20px; align-items: center; flex-shrink: 0; }
+.kpi { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.kpi-lbl { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+.kpi-val { font-size: 36px; font-weight: 700; line-height: 1; }
+.kv-real { color: var(--amber); }
+.kv-obj  { color: var(--cyan);  }
+.kv-pct  { color: var(--text);  }
+.s-pill  { padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; margin-top: 3px; letter-spacing: .04em; }
+.p-ok    { background: rgba(34,197,94,.18); color: var(--green); }
+.p-bad   { background: rgba(226,75,74,.18);  color: var(--red);   }
+/* canvas fills the card's remaining space */
+.chart-wrap { position: relative; flex: 1; min-height: 0; width: 100%; }
+.legend { display: flex; gap: 18px; margin-top: 8px; font-size: 12px; color: var(--muted); flex-shrink: 0; }
+.leg-i  { display: flex; align-items: center; gap: 6px; }
+.leg-ln { width: 20px; height: 2px; border-radius: 2px; }
+
+/* ── LOADING ── */
+#loading {
+  position: fixed; inset: 0; background: var(--bg); z-index: 999;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+}
+.spinner { width: 28px; height: 28px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#error-bar {
+  display: none; flex-shrink: 0; margin: 6px 12px; padding: 7px 12px;
+  background: rgba(226,75,74,.1); border: 1px solid rgba(226,75,74,.3);
+  border-radius: 6px; color: var(--red); font-size: 12px;
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="toolbar">
+    <span class="toolbar-title">Monitor de Producción</span>
+    <div class="tb-sep"></div>
+
+    <div class="dd-wrapper" id="dd-maq">
+      <button class="dd-btn" onclick="toggleDD('dd-maq')">
+        <span id="lbl-maq">—</span><span class="dd-arrow">▼</span>
+      </button>
+      <div class="dd-menu" id="menu-maq"></div>
+    </div>
+
+    <div class="dd-wrapper" id="dd-view">
+      <button class="dd-btn" onclick="toggleDD('dd-view')">
+        <span id="lbl-view">Todas las líneas</span><span class="dd-arrow">▼</span>
+      </button>
+      <div class="dd-menu" id="menu-view"></div>
+    </div>
+
+    <div class="tb-right">
+      <span class="shift-badge" id="shift-badge">—</span>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <div class="pulse"></div>
+    <span id="status-txt">Cargando...</span>
+    <span style="margin-left:auto; font-size:11px; color:var(--muted);" id="countdown">—</span>
+    <button class="btn-ref" onclick="manualRefresh()">↻ Ahora</button>
+  </div>
+
+  <div id="error-bar"></div>
+  <div id="charts-area"></div>
+</div>
+<button id="btn-toggle" onclick="toggleUI()" title="Mostrar / ocultar controles">☰</button>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div style="font-size:12px; color:var(--muted);" id="loading-msg">Cargando datos...</div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     CONFIGURACIÓN — sólo el encargado edita
+     ══════════════════════════════════════════ -->
+<script>
+// ── MODO DE TURNO ─────────────────────────────────────────────────────────────
+//   'fixed'  → turnos con horario fijo definido en TURNOS_HORARIOS
+//   'auto'   → turno detectado por último gap > AUTO_SHIFT_GAP_H sin pulso TM
+const TURNO_CONFIG = 'fixed';
+
+// ── HORARIOS DE TURNO (modo 'fixed') ──────────────────────────────────────────
+// Cada entrada: { inicio: 'HH:MM', fin: 'HH:MM', nombre: '...' }
+//   inicio / fin en formato 24h. Si fin < inicio el turno cruza medianoche.
+//
+// ▼ 2 TURNOS DE 12 HORAS
+const TURNOS_HORARIOS = [
+  { inicio: '06:00', fin: '15:00', nombre: 'Turno 1' },
+  { inicio: '22:00', fin: '06:00', nombre: 'Turno 2' },
+];
+// ▼ 3 TURNOS DE 8 HORAS — comentar el bloque anterior y descomentar este
+// const TURNOS_HORARIOS = [
+//   { inicio: '06:00', fin: '14:00', nombre: 'Turno 1' },
+//   { inicio: '14:00', fin: '22:00', nombre: 'Turno 2' },
+//   { inicio: '22:00', fin: '06:00', nombre: 'Turno 3' },
+// ];
+
+// ── MODO AUTO ─────────────────────────────────────────────────────────────────
+const AUTO_SHIFT_GAP_H = 6;   // horas sin pulso TM → corte de turno
+
+// ── GENERAL ───────────────────────────────────────────────────────────────────
+const TCO_DEFAULT = 240;       // segundos, fallback si no viene de CSV de órdenes
+
+const MACHINE_CONFIGS = {
+  armadoras: {
+    csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQVrHs_GXmZGUMaOBjo4zr6mtNbFpf45WZ916Bj6LktK0i1F1gofWV_dnZfjam7MAbhDoQap_nZryeO/pub?gid=0&single=true&output=csv',
+    name: 'Armadoras', tco: 240,
+    ordersUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQy3zOaMDgS6L55fLDtRZLJAHZgoOkseNx-VQAfrCJZD1j6s9UgAvxqFGmuBT6yxBs75wKSU4KosVGO/pub?output=csv'
+  },
+  expansoras: {
+    csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRkBYlgzc71g76k03IhGUA29lNMKjJl1rgB9WwzXcxT4uHgvzsySXs5tAuQHqQKglMLFgao6u4enqPC/pub?gid=0&single=true&output=csv',
+    name: 'Expansoras', tco: 35
+  },
+  boquilladoras: {
+    csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRyXM96q2hm6rpG8lqZC6MyFOpWmrofOyUh2wHuSByLUODy1AW3gwmurN3l_L8OUjVNyKzZnf9PQAg6/pub?gid=0&single=true&output=csv',
+    name: 'Boquilladoras', tco: 120
+  },
+  engrafadoras: {
+    csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTey6-OpEpD1e2CBoJgya6E2aUjlexIIwEnbTYsXT2yXjU-1VFDYcJYDcRCYgw6HEI3crJMNSShjI3g/pub?gid=0&single=true&output=csv',
+    name: 'Engrafadoras', tco: 72
+  },
+  inyectora_km4000: {
+    csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQB4WKu2lAwiBUY2-RBqF69LjB4US4V3tHS5-HFmPtTIMmX1Gy-tWx4wC5ER76Bz8n7pEQIzrvpEiYQ/pub?gid=0&single=true&output=csv',
+    name: 'Inyectora KM4000', tco: 180
+  },
+  inyectora_cosmos: {
+    csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQKIOPE8g77gFjoCKpJt8P-sBUvgv2Nb-AX4650AB8FOYo84TKMCM0hztArZJu6Ci2gKz7tysF8TneW/pub?gid=0&single=true&output=csv',
+    name: 'Inyectora Cosmos 1500', tco: 210
+  }
+};
+</script>
+
+<script>
+// ══════════════════════════════════════════
+//  ESTADO GLOBAL
+// ══════════════════════════════════════════
+let currentMachine = 'armadoras';
+let currentView    = 'all';
+let allEquipos     = [];   // strings (valores directos del CSV, ej: "221")
+let charts         = {};
+let _rows          = [];
+let countdownTimer = null;
+let countdownSecs  = 60;
+
+// ══════════════════════════════════════════
+//  HELPERS DE FECHA
+// ══════════════════════════════════════════
+function parseRowDate(row) {
+  const dp = row.datedata.split('/');
+  if (dp.length < 3) return new Date(0);
+  const d = +dp[0], m = +dp[1] - 1, y = +dp[2];
+  const tp = row.timestamp.split(':');
+  return new Date(y, m, d, +tp[0]||0, +tp[1]||0, +tp[2]||0);
+}
+
+// Convierte "HH:MM" en { h, m }
+function parseHM(str) {
+  const p = str.split(':');
+  return { h: +p[0], m: +(p[1] || 0) };
+}
+
+// Dado un string "HH:MM" y una fecha de referencia, devuelve el Date más
+// reciente (hoy o ayer) cuya hora coincida y sea <= now.
+function lastOccurrence(hmStr, now) {
+  const { h, m } = parseHM(hmStr);
+  const candidate = new Date(now);
+  candidate.setHours(h, m, 0, 0);
+  if (candidate > now) candidate.setDate(candidate.getDate() - 1);
+  return candidate;
+}
+
+// ══════════════════════════════════════════
+//  DETECCIÓN DE TURNO
+// ══════════════════════════════════════════
+function getShiftInfo(rows) {
+  const now = new Date();
+
+  // ── MODO AUTO ──────────────────────────────────────────────────────────────
+  if (TURNO_CONFIG === 'auto') {
+    // Rango amplio: últimas 48 h
+    const lookback = new Date(now.getTime() - 48 * 3600000);
+    const times = rows
+      .filter(r => r.codigo === 'TM')
+      .map(r => parseRowDate(r))
+      .filter(dt => dt >= lookback && dt <= now)
+      .sort((a, b) => a - b);
+
+    // Inicio del turno = primer pulso tras el último gap > umbral
+    let shiftStart = times.length ? times[0] : new Date(now.getTime() - 12 * 3600000);
+    for (let i = times.length - 1; i > 0; i--) {
+      if ((times[i] - times[i-1]) / 3600000 > AUTO_SHIFT_GAP_H) {
+        shiftStart = times[i];
+        break;
+      }
+    }
+    const shiftEnd = new Date(shiftStart.getTime() + 12 * 3600000);
+    const fmtA = d => d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+    return { shiftStartDate: shiftStart, shiftEndDate: shiftEnd,
+             label: `Turno automático  ${fmtA(shiftStart)} – ${fmtA(shiftEnd)}`, turnoIdx: -1 };
+  }
+
+  // ── MODO FIXED ─────────────────────────────────────────────────────────────
+  // El turno activo es aquel cuyo inicio es el más reciente <= now.
+  // El fin usa el campo explícito t.fin; si fin <= inicio el turno cruza medianoche.
+
+  const candidates = TURNOS_HORARIOS.map((t, i) => ({
+    idx:   i,
+    cfg:   t,
+    start: lastOccurrence(t.inicio, now)
+  }));
+
+  // Turno activo = inicio más reciente sin superar now
+  candidates.sort((a, b) => b.start - a.start);
+  const active = candidates[0];
+
+  // Calcular fin usando el campo explícito t.fin
+  const { h: fh, m: fm } = parseHM(active.cfg.fin);
+  const shiftEnd = new Date(active.start);
+  shiftEnd.setHours(fh, fm, 0, 0);
+  // Si fin <= inicio de turno → cruza medianoche, avanzar 1 día
+  if (shiftEnd <= active.start) shiftEnd.setDate(shiftEnd.getDate() + 1);
+
+  const fmt = d => d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+
+  return {
+    shiftStartDate: active.start,
+    shiftEndDate:   shiftEnd,
+    label:          `${active.cfg.nombre}  ${fmt(active.start)} – ${fmt(shiftEnd)}`,
+    turnoIdx:       active.idx
+  };
+}
+
+// ══════════════════════════════════════════
+//  CSV PARSE
+// ══════════════════════════════════════════
+function parseCSV(text) {
+  const lines   = text.trim().split('\n');
+  const headers = lines[0].split(',').map(h => h.trim());
+  return lines.slice(1)
+    .map(line => {
+      const v = line.split(',');
+      const o = {};
+      headers.forEach((h, i) => { o[h] = (v[i] || '').trim(); });
+      return o;
+    })
+    .filter(r => r.datedata && r.timestamp && r.codigo);
+}
+
+// ══════════════════════════════════════════
+//  SERIES POR EQUIPO
+// ══════════════════════════════════════════
+function buildEquipoSeries(rows, equipoId, tco) {
+  const now = new Date();
+  const si  = getShiftInfo(rows);
+  const viewEnd = new Date(now.getTime() + 30 * 60000);
+  const xMax    = viewEnd < si.shiftEndDate ? viewEnd : si.shiftEndDate;
+
+  // TM únicos del equipo en el turno
+  const seen   = new Set();
+  const events = rows
+    .filter(r => r.equipo === equipoId && r.codigo === 'TM')
+    .map(r => ({ dt: parseRowDate(r), val: +r.valor }))
+    .filter(r => r.dt >= si.shiftStartDate && r.dt <= now)
+    .sort((a, b) => a.dt - b.dt)
+    .filter(r => {
+      const k = r.dt.getTime() + '_' + r.val;
+      if (seen.has(k)) return false;
+      seen.add(k); return true;
+    });
+
+  // Acumulado real
+  const realPts = [{ x: si.shiftStartDate.getTime(), y: 0 }];
+  let cumul = 0;
+  events.forEach(e => { cumul++; realPts.push({ x: e.dt.getTime(), y: cumul }); });
+  realPts.push({ x: now.getTime(), y: cumul });
+
+  // Objetivo (rampa lineal)
+  const pphora  = 3600 / tco;
+  const objPts  = [
+    { x: si.shiftStartDate.getTime(), y: 0 },
+    { x: xMax.getTime(), y: (xMax - si.shiftStartDate) / 3600000 * pphora }
+  ];
+
+  const elapsed = (now - si.shiftStartDate) / 3600000;
+  const objNow  = elapsed * pphora;
+  const pct     = objNow > 0 ? (cumul / objNow) * 100 : 0;
+
+  return {
+    realPts, objPts,
+    current: cumul, objNow, pct,
+    xMin: si.shiftStartDate.getTime(),
+    xMax: xMax.getTime(),
+    xShiftStart: si.shiftStartDate.getTime(),
+    xShiftEnd:   si.shiftEndDate.getTime()
+  };
+}
+
+function getEquipoMeta(rows, equipoId) {
+  const rss = rows.find(r => r.equipo === equipoId && r.codigo === 'RSS' && r.valor && r.valor.length > 5);
+  return rss ? rss.valor : equipoId;
+}
+
+// ══════════════════════════════════════════
+//  DROPDOWNS
+// ══════════════════════════════════════════
+function toggleDD(id) {
+  const wasOpen = document.getElementById(id).classList.contains('dd-open');
+  document.querySelectorAll('.dd-wrapper').forEach(el => el.classList.remove('dd-open'));
+  if (!wasOpen) document.getElementById(id).classList.add('dd-open');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.dd-wrapper'))
+    document.querySelectorAll('.dd-wrapper').forEach(el => el.classList.remove('dd-open'));
+});
+
+function buildMachineMenu() {
+  const menu = document.getElementById('menu-maq');
+  menu.innerHTML = '<div class="dd-lbl">Grupo de máquinas</div>';
+  Object.entries(MACHINE_CONFIGS).forEach(([key, cfg]) => {
+    const d = document.createElement('div');
+    d.className = 'dd-item' + (key === currentMachine ? ' active' : '');
+    d.innerHTML = `<span class="dd-check">${key === currentMachine ? '✓' : ''}</span>${cfg.name}`;
+    d.onclick = () => { selectMachine(key); toggleDD('dd-maq'); };
+    menu.appendChild(d);
+  });
+  document.getElementById('lbl-maq').textContent = MACHINE_CONFIGS[currentMachine].name;
+}
+
+// IMPORTANTE: las vistas usan ÍNDICE numérico en allEquipos, NO el id del equipo.
+// Esto evita el bug de equipos con ids que contienen '_' o son strings.
+// value = 'all' | 'line_IDX' | 'range_IDXA_IDXB'
+function buildViewMenu() {
+  const menu = document.getElementById('menu-view');
+  menu.innerHTML = '';
+  const n = allEquipos.length;
+
+  function add(opt) {
+    if (opt.sep) { const s = document.createElement('div'); s.className = 'dd-sep'; menu.appendChild(s); return; }
+    if (opt.lbl) { const l = document.createElement('div'); l.className = 'dd-lbl'; l.textContent = opt.lbl; menu.appendChild(l); return; }
+    const d = document.createElement('div');
+    d.className = 'dd-item' + (opt.v === currentView ? ' active' : '');
+    d.innerHTML = `<span class="dd-check">${opt.v === currentView ? '✓' : ''}</span>${opt.t}`;
+    d.onclick = () => { selectView(opt.v, opt.t); toggleDD('dd-view'); };
+    menu.appendChild(d);
+  }
+
+  add({ lbl: 'Vista general' });
+  add({ v: 'all', t: 'Todas las líneas' });
+
+  if (n > 0) {
+    add({ sep: true });
+    add({ lbl: 'Línea individual' });
+    allEquipos.forEach((eq, i) => {
+      add({ v: `line_${i}`, t: `Línea ${i + 1}  (equipo ${eq})` });
+    });
+  }
+
+  if (n >= 3) {
+    add({ sep: true });
+    add({ lbl: 'Rango de líneas' });
+    for (let a = 0; a < n - 1; a++) {
+      for (let b = a + 1; b < n; b++) {
+        add({ v: `range_${a}_${b}`, t: `Líneas ${a + 1} → ${b + 1}` });
+      }
+    }
+  }
+}
+
+// Devuelve array de strings (equipoId) — subset de allEquipos
+function getVisibleEquipos() {
+  if (currentView === 'all') return allEquipos;
+
+  if (currentView.startsWith('line_')) {
+    const idx = parseInt(currentView.substring(5), 10);
+    return allEquipos[idx] !== undefined ? [allEquipos[idx]] : allEquipos;
+  }
+
+  if (currentView.startsWith('range_')) {
+    // 'range_A_B' → idx A a B inclusive
+    const rest = currentView.substring(6);          // "A_B"
+    const sep  = rest.indexOf('_');
+    const ia   = parseInt(rest.substring(0, sep), 10);
+    const ib   = parseInt(rest.substring(sep + 1),  10);
+    return allEquipos.slice(ia, ib + 1);
+  }
+
+  return allEquipos;
+}
+
+function selectMachine(key) {
+  currentMachine = key;
+  currentView    = 'all';
+  document.getElementById('lbl-view').textContent = 'Todas las líneas';
+  loadData();
+}
+
+function selectView(value, text) {
+  currentView = value;
+  document.getElementById('lbl-view').textContent = text;
+  renderCharts();
+}
+
+// ══════════════════════════════════════════
+//  RENDER CHARTS
+// ══════════════════════════════════════════
+function renderCharts() {
+  const area    = document.getElementById('charts-area');
+  const cfg     = MACHINE_CONFIGS[currentMachine];
+  const tco     = cfg.tco || TCO_DEFAULT;
+  const visible = getVisibleEquipos();
+  const single  = visible.length === 1;
+
+  // Limpiar
+  Object.values(charts).forEach(c => { try { c.destroy(); } catch(e){} });
+  charts = {};
+  area.innerHTML = '';
+
+  // Grid: columnas y filas explícitas para que cada card llene su celda
+  area.className = '';
+  area.style.overflowY = 'hidden';
+  const cols = single ? 1
+             : visible.length === 2 ? 2
+             : visible.length <= 4  ? 2
+             : visible.length <= 9  ? 3 : 4;
+  const rows = Math.ceil(visible.length / cols);
+  area.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  area.style.gridTemplateRows    = `repeat(${rows}, 1fr)`;
+
+  visible.forEach(eqId => {
+    const lineNum = allEquipos.indexOf(eqId) + 1;
+    const meta    = getEquipoMeta(_rows, eqId);
+    const s       = buildEquipoSeries(_rows, eqId, tco);
+    const ok      = s.pct >= 90;
+
+    const card = document.createElement('div');
+    card.className = 'chart-card';
+    card.innerHTML = `
+      <div class="card-header">
+        <div class="card-meta">
+          <div class="card-title">LÍNEA ${lineNum} &mdash; ${eqId} &mdash; ${meta}</div>
+          <div class="card-sub">${cfg.name} &middot; TCO ${tco}s &middot; ${(3600/tco).toFixed(1)} pzas/h</div>
+        </div>
+        <div class="card-kpis">
+          <div class="kpi">
+            <span class="kpi-lbl">Real</span>
+            <span class="kpi-val kv-real">${Math.round(s.current)}</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi-lbl">Objetivo</span>
+            <span class="kpi-val kv-obj">${Math.round(s.objNow)}</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi-lbl">%</span>
+            <span class="kpi-val kv-pct">${s.pct.toFixed(1)}%</span>
+            <span class="s-pill ${ok ? 'p-ok' : 'p-bad'}">${ok ? 'EN META' : 'BAJO'}</span>
+          </div>
+        </div>
+      </div>
+      <div class="chart-wrap" id="wrap-${eqId}"><canvas id="cv-${eqId}"></canvas></div>
+      <div class="legend">
+        <span class="leg-i"><span class="leg-ln" style="background:var(--amber)"></span>Real (TM)</span>
+        <span class="leg-i"><span class="leg-ln" style="background:var(--cyan); opacity:.7"></span>Objetivo (TCO ${tco}s)</span>
+      </div>
+    `;
+    area.appendChild(card);
+
+    // Chart.js necesita el canvas en el DOM
+    requestAnimationFrame(() => {
+      const canvas = document.getElementById(`cv-${eqId}`);
+      if (!canvas) return;
+
+      charts[eqId] = new Chart(canvas, {
+        type: 'line',
+        data: {
+          datasets: [
+            {
+              label: 'Objetivo',
+              data: s.objPts,
+              borderColor: '#1db88e',
+              borderWidth: 1.5,
+              borderDash: [5, 4],
+              pointRadius: 0,
+              tension: 0,
+              fill: false
+            },
+            {
+              label: 'Real',
+              data: s.realPts,
+              borderColor: '#f0a500',
+              borderWidth: 2.5,
+              pointRadius: 0,
+              tension: 0.35,
+              fill: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 300 },
+          layout: { padding: { top: 4, right: 4, bottom: 0, left: 0 } },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: items => new Date(items[0].parsed.x).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+                label: c => c.dataset.label + ': ' + Math.round(c.parsed.y) + ' uds'
+              }
+            },
+            annotation: {
+              annotations: {
+                lineStart: {
+                  type: 'line', scaleID: 'x', value: s.xShiftStart,
+                  borderColor: 'rgba(59,130,246,0.55)', borderWidth: 1.5, borderDash: [4, 3],
+                  label: { content: 'Inicio turno', display: true, position: 'start',
+                           color: '#3b82f6', font: { size: 10 }, backgroundColor: 'transparent', padding: 2 }
+                },
+                lineEnd: {
+                  type: 'line', scaleID: 'x', value: s.xShiftEnd,
+                  borderColor: 'rgba(122,133,153,0.45)', borderWidth: 1.5, borderDash: [4, 3],
+                  label: { content: 'Fin turno', display: true, position: 'start',
+                           color: '#7a8599', font: { size: 10 }, backgroundColor: 'transparent', padding: 2 }
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: 'time',
+              min: s.xMin, max: s.xMax,
+              time: { unit: 'hour', displayFormats: { hour: 'HH:mm' }, tooltipFormat: 'HH:mm' },
+              ticks: { color: '#9aa3b2', font: { size: 12 }, maxRotation: 0 },
+              grid:  { color: 'rgba(42,48,64,.7)' },
+              border: { color: 'rgba(42,48,64,.7)' }
+            },
+            y: {
+              min: 0,
+              ticks: { color: '#9aa3b2', font: { size: 12 } },
+              grid:  { color: 'rgba(42,48,64,.7)' },
+              border: { color: 'rgba(42,48,64,.7)' }
+            }
+          }
+        }
+      });
+    });
+  });
+}
+
+// ══════════════════════════════════════════
+//  FETCH & LOAD
+// ══════════════════════════════════════════
+async function loadData() {
+  showLoading('Cargando datos...');
+  hideError();
+  try {
+    const cfg  = MACHINE_CONFIGS[currentMachine];
+    const resp = await fetch(cfg.csvUrl + '&_nc=' + Date.now());
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    _rows = parseCSV(await resp.text());
+
+    // Detectar turno activo y equipos con pulsos dentro de él
+    const si = getShiftInfo(_rows);
+    allEquipos = [...new Set(
+      _rows
+        .filter(r => r.codigo === 'TM' && parseRowDate(r) >= si.shiftStartDate)
+        .map(r => r.equipo)
+    )].sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+
+    buildMachineMenu();
+    buildViewMenu();
+    renderCharts();
+
+    document.getElementById('shift-badge').textContent = si.label;
+    document.getElementById('status-txt').textContent =
+      `${cfg.name} · ${new Date().toLocaleTimeString('es-AR')}`;
+
+    hideLoading();
+    resetCountdown();
+  } catch(err) {
+    hideLoading();
+    showError('Error al obtener datos: ' + err.message);
+    resetCountdown();
+  }
+}
+
+// ══════════════════════════════════════════
+//  COUNTDOWN
+// ══════════════════════════════════════════
+function resetCountdown() {
+  clearInterval(countdownTimer);
+  countdownSecs = 60;
+  countdownTimer = setInterval(() => {
+    countdownSecs--;
+    document.getElementById('countdown').textContent = `Auto-refresh: ${countdownSecs}s`;
+    if (countdownSecs <= 0) { clearInterval(countdownTimer); loadData(); }
+  }, 1000);
+}
+function manualRefresh() { clearInterval(countdownTimer); loadData(); }
+
+function showLoading(m) { document.getElementById('loading-msg').textContent = m; document.getElementById('loading').style.display = 'flex'; }
+function hideLoading()  { document.getElementById('loading').style.display = 'none'; }
+function showError(m)   { const b = document.getElementById('error-bar'); b.textContent = m; b.style.display = 'block'; }
+function hideError()    { document.getElementById('error-bar').style.display = 'none'; }
+
+// ── TOOLBAR TOGGLE
+let uiVisible = true;
+function toggleUI() {
+  uiVisible = !uiVisible;
+  const app = document.getElementById('app');
+  const btn = document.getElementById('btn-toggle');
+  app.classList.toggle('ui-hidden', !uiVisible);
+  btn.textContent = uiVisible ? '☰' : '⚙';
+  btn.title       = uiVisible ? 'Ocultar controles' : 'Mostrar controles';
+  // Resize charts after transition ends so Chart.js picks up new dimensions
+  setTimeout(() => {
+    Object.values(charts).forEach(c => { try { c.resize(); } catch(e){} });
+  }, 250);
+}
+
+// ── INIT
+buildMachineMenu();
+loadData();
+</script>
+</body>
+</html>
