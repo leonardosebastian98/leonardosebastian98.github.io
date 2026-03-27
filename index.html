@@ -712,7 +712,7 @@ async function loadData() {
 // ══════════════════════════════════════════
 function resetCountdown() {
   clearInterval(countdownTimer);
-  countdownSecs = 60;
+  countdownSecs = 300;
   countdownTimer = setInterval(() => {
     countdownSecs--;
     document.getElementById('countdown').textContent = `Auto-refresh: ${countdownSecs}s`;
