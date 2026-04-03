@@ -137,6 +137,57 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .leg-i  { display: flex; align-items: center; gap: 6px; }
 .leg-ln { width: 20px; height: 2px; border-radius: 2px; }
 
+/* ══════════════════════════════════════════
+   RESPONSIVE MÓVIL
+   ══════════════════════════════════════════ */
+
+/* mobile-nav no existe más — eliminado */
+#mobile-nav { display: none; }
+
+@media (max-width: 700px) {
+  /* App: scroll vertical normal, sin overflow:hidden */
+  html, body { overflow: auto; height: auto; }
+  #app { height: auto; min-height: 100vh; overflow: visible; }
+
+  /* Toolbar compacta */
+  .toolbar { gap: 6px; padding: 0 10px; height: 48px; flex-wrap: nowrap; }
+  .toolbar-title { display: none; }
+  .tb-sep { display: none; }
+  .dd-btn { min-width: 0; padding: 4px 8px; font-size: 11px; }
+  .shift-badge { display: none; }
+
+  /* Status bar más compacta */
+  .statusbar { padding: 0 10px; font-size: 10px; }
+
+  /* Charts area: columna única, scroll vertical, sin altura fija */
+  #charts-area {
+    display: flex !important;          /* sobreescribir grid de desktop */
+    flex-direction: column;
+    padding: 8px;
+    gap: 8px;
+    overflow: visible;
+    /* altura calculada en JS pero no bloqueante */
+  }
+
+  /* Cada card ocupa exactamente un viewport de altura */
+  #charts-area .chart-card {
+    display: flex;
+    /* 100svh = viewport sin barra del navegador en móvil;
+       fallback a 100vh si svh no está soportado */
+    height: 100vh;
+    height: 100svh;
+    flex-shrink: 0;
+  }
+
+  /* KPIs más compactos */
+  .kpi-val    { font-size: 28px; }
+  .card-title { font-size: 12px; }
+  .card-sub   { font-size: 11px; }
+
+  /* Toggle button */
+  #btn-toggle { bottom: 14px; right: 10px; width: 32px; height: 32px; font-size: 14px; }
+}
+
 /* ── LOADING ── */
 #loading {
   position: fixed; inset: 0; background: var(--bg); z-index: 999;
@@ -186,6 +237,8 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 
   <div id="error-bar"></div>
   <div id="charts-area"></div>
+
+  <!-- mobile-nav eliminado: navegación por scroll vertical nativo -->
 </div>
 <button id="btn-toggle" onclick="toggleUI()" title="Mostrar / ocultar controles">☰</button>
 
@@ -336,33 +389,46 @@ function getShiftInfo(rows) {
   }
 
   // ── MODO FIXED ─────────────────────────────────────────────────────────────
-  // El turno activo es aquel cuyo inicio es el más reciente <= now.
-  // El fin usa el campo explícito t.fin; si fin <= inicio el turno cruza medianoche.
-
-  const candidates = TURNOS_HORARIOS.map((t, i) => ({
-    idx:   i,
-    cfg:   t,
-    start: lastOccurrence(t.inicio, now)
-  }));
-
-  // Turno activo = inicio más reciente sin superar now
-  candidates.sort((a, b) => b.start - a.start);
-  const active = candidates[0];
-
-  // Calcular fin usando el campo explícito t.fin
-  const { h: fh, m: fm } = parseHM(active.cfg.fin);
-  const shiftEnd = new Date(active.start);
-  shiftEnd.setHours(fh, fm, 0, 0);
-  // Si fin <= inicio de turno → cruza medianoche, avanzar 1 día
-  if (shiftEnd <= active.start) shiftEnd.setDate(shiftEnd.getDate() + 1);
-
+  // Construir todos los candidatos con su inicio y fin calculados
   const fmt = d => d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
 
+  const candidates = TURNOS_HORARIOS.map((t, i) => {
+    const start = lastOccurrence(t.inicio, now);
+    const { h: fh, m: fm } = parseHM(t.fin);
+    const end = new Date(start);
+    end.setHours(fh, fm, 0, 0);
+    if (end <= start) end.setDate(end.getDate() + 1);
+    return { idx: i, cfg: t, start, end };
+  });
+
+  // Turno activo: el más reciente cuyo rango [start, end) contiene now
+  const active = candidates
+    .filter(c => now >= c.start && now < c.end)
+    .sort((a, b) => b.start - a.start)[0];
+
+  if (active) {
+    // Estamos dentro de un turno
+    return {
+      shiftStartDate: active.start,
+      shiftEndDate:   active.end,
+      label:          `${active.cfg.nombre}  ${fmt(active.start)} – ${fmt(active.end)}`,
+      turnoIdx:       active.idx,
+      isActive:       true
+    };
+  }
+
+  // Fuera de turno: usar el turno más reciente que ya terminó
+  const past = candidates
+    .filter(c => now >= c.end)
+    .sort((a, b) => b.end - a.end)[0]
+    || candidates.sort((a, b) => b.start - a.start)[0]; // fallback
+
   return {
-    shiftStartDate: active.start,
-    shiftEndDate:   shiftEnd,
-    label:          `${active.cfg.nombre}  ${fmt(active.start)} – ${fmt(shiftEnd)}`,
-    turnoIdx:       active.idx
+    shiftStartDate: past.start,
+    shiftEndDate:   past.end,
+    label:          `${past.cfg.nombre}  ${fmt(past.start)} – ${fmt(past.end)} (último turno)`,
+    turnoIdx:       past.idx,
+    isActive:       false   // ← fuera de horario, mostrando datos del turno anterior
   };
 }
 
@@ -417,14 +483,15 @@ function buildGolSeries(rows, equipoId) {
   realPts.push({ x: now.getTime(), y: cumul });
 
   // Objetivo: rampa lineal — golpes/ms × tiempo transcurrido
-  // tasa = GOL_OBJETIVO_VENTANA golpes cada GOL_VENTANA_MIN minutos
-  const golPorMs = GOL_OBJETIVO_VENTANA / (GOL_VENTANA_MIN * 60000);
+  // se congela al fin del turno, no sigue creciendo fuera de él
+  const golPorMs  = GOL_OBJETIVO_VENTANA / (GOL_VENTANA_MIN * 60000);
+  const objCapAt  = now < si.shiftEndDate ? now : si.shiftEndDate;
   const objPts = [
     { x: si.shiftStartDate.getTime(), y: 0 },
-    { x: xMax.getTime(), y: (xMax - si.shiftStartDate) * golPorMs }
+    { x: xMax.getTime(), y: (objCapAt - si.shiftStartDate) * golPorMs }
   ];
 
-  const elapsed = now - si.shiftStartDate;
+  const elapsed = objCapAt - si.shiftStartDate;
   const objNow  = elapsed * golPorMs;
   const pct     = objNow > 0 ? (cumul / objNow) * 100 : 0;
 
@@ -468,14 +535,15 @@ function buildEquipoSeries(rows, equipoId, tco) {
   events.forEach(e => { cumul++; realPts.push({ x: e.dt.getTime(), y: cumul }); });
   realPts.push({ x: now.getTime(), y: cumul });
 
-  // Objetivo (rampa lineal)
-  const pphora  = 3600 / tco;
-  const objPts  = [
+  // Objetivo (rampa lineal) — se congela al fin del turno
+  const pphora    = 3600 / tco;
+  const objCapAt  = now < si.shiftEndDate ? now : si.shiftEndDate; // no crece fuera de turno
+  const objPts    = [
     { x: si.shiftStartDate.getTime(), y: 0 },
-    { x: xMax.getTime(), y: (xMax - si.shiftStartDate) / 3600000 * pphora }
+    { x: xMax.getTime(), y: (objCapAt - si.shiftStartDate) / 3600000 * pphora }
   ];
 
-  const elapsed = (now - si.shiftStartDate) / 3600000;
+  const elapsed = (objCapAt - si.shiftStartDate) / 3600000;
   const objNow  = elapsed * pphora;
   const pct     = objNow > 0 ? (cumul / objNow) * 100 : 0;
 
@@ -609,7 +677,8 @@ function renderCharts() {
   charts = {};
   area.innerHTML = '';
 
-  // Grid: columnas y filas explícitas para que cada card llene su celda
+  // Grid desktop: columnas + filas explícitas para llenar viewport
+  // En móvil el CSS sobreescribe a flex-column, este grid no aplica
   area.className = '';
   area.style.overflowY = 'hidden';
   const cols = single ? 1
@@ -761,6 +830,9 @@ function renderCharts() {
       });
     });
   });
+
+  // En móvil, resize tras render para que Chart.js tome las dimensiones CSS
+  if (isMobile()) resizeAllCharts();
 }
 
 // ══════════════════════════════════════════
@@ -789,7 +861,10 @@ async function loadData() {
     buildViewMenu();
     renderCharts();
 
-    document.getElementById('shift-badge').textContent = si.label;
+    const badge = document.getElementById('shift-badge');
+    badge.textContent = si.label;
+    badge.style.color        = si.isActive === false ? 'var(--amber)' : '';
+    badge.style.borderColor  = si.isActive === false ? 'rgba(240,165,0,.4)' : '';
     document.getElementById('status-txt').textContent =
       `${cfg.name} · ${new Date().toLocaleTimeString('es-AR')}`;
 
@@ -835,6 +910,19 @@ function toggleUI() {
     Object.values(charts).forEach(c => { try { c.resize(); } catch(e){} });
   }, 250);
 }
+
+// ── MOBILE ──────────────────────────────────────────────────────────────────
+function isMobile() { return window.innerWidth <= 700; }
+
+// En móvil los charts necesitan resize después de que el layout flex
+// los coloca en su posición final (el CSS les da 100svh de altura).
+function resizeAllCharts() {
+  setTimeout(() => {
+    Object.values(charts).forEach(c => { try { c.resize(); } catch(e){} });
+  }, 100);
+}
+
+window.addEventListener('resize', resizeAllCharts);
 
 // ── INIT
 buildMachineMenu();
