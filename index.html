@@ -847,13 +847,18 @@ async function loadData() {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     _rows = parseCSV(await resp.text());
 
-    // Detectar turno activo y equipos con pulsos dentro de él
+    // Detectar turno activo
     const si  = getShiftInfo(_rows);
     const cfg2 = MACHINE_CONFIGS[currentMachine];
     const codigoFiltro = cfg2.isGolMode ? 'GOL' : 'TM';
+
+    // Equipos: todos los que tienen CUALQUIER pulso en el CSV (sin filtro de turno).
+    // Así aparece la card aunque el equipo no haya producido en el turno actual
+    // o estemos fuera de horario. El gráfico simplemente quedará vacío o mostrará
+    // los datos disponibles del turno de referencia.
     allEquipos = [...new Set(
       _rows
-        .filter(r => r.codigo === codigoFiltro && parseRowDate(r) >= si.shiftStartDate)
+        .filter(r => r.codigo === codigoFiltro)
         .map(r => r.equipo)
     )].sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
 
