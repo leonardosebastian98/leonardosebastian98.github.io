@@ -287,7 +287,7 @@ const MACHINE_CONFIGS = {
   armadoras: {
     csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQVrHs_GXmZGUMaOBjo4zr6mtNbFpf45WZ916Bj6LktK0i1F1gofWV_dnZfjam7MAbhDoQap_nZryeO/pub?gid=0&single=true&output=csv',
     name: 'Armadoras', tco: 240,
-    ordersUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQy3zOaMDgS6L55fLDtRZLJAHZgoOkseNx-VQAfrCJZD1j6s9UgAvxqFGmuBT6yxBs75wKSU4KosVGO/pub?output=csv'
+    ordersUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSziuoyPsKM3b1ndIAtcfyCGwy-2pvdOzjt0k0cACsxdhMkEv8pynKY8Ff1ryoBAg/pub?gid=1277864885&single=true&output=csv'
   },
   expansoras: {
     csvUrl: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRkBYlgzc71g76k03IhGUA29lNMKjJl1rgB9WwzXcxT4uHgvzsySXs5tAuQHqQKglMLFgao6u4enqPC/pub?gid=0&single=true&output=csv',
@@ -323,13 +323,15 @@ const MACHINE_CONFIGS = {
 // ══════════════════════════════════════════
 //  ESTADO GLOBAL
 // ══════════════════════════════════════════
-let currentMachine = 'armadoras';
-let currentView    = 'all';
+let currentMachine = 'armadoras'; // máquina seleccionada al abrir (clave de MACHINE_CONFIGS)
+let currentView    = 'all';    // vista inicial: 'all' | 'line_N' | 'range_N_M' (índices base 0)
 let allEquipos     = [];   // strings (valores directos del CSV, ej: "221")
 let charts         = {};
 let _rows          = [];
 let countdownTimer = null;
 let countdownSecs  = 60;
+// Órdenes de fabricación indexadas por equipo: { '221': [...], 'ALL': [...] }
+let fabricationOrders = {};
 
 // ══════════════════════════════════════════
 //  HELPERS DE FECHA
@@ -483,17 +485,18 @@ function buildGolSeries(rows, equipoId) {
   realPts.push({ x: now.getTime(), y: cumul });
 
   // Objetivo: rampa lineal — golpes/ms × tiempo transcurrido
-  // se congela al fin del turno, no sigue creciendo fuera de él
-  const golPorMs  = GOL_OBJETIVO_VENTANA / (GOL_VENTANA_MIN * 60000);
-  const objCapAt  = now < si.shiftEndDate ? now : si.shiftEndDate;
+  // KPI = valor a now (congelado al fin del turno)
+  // Línea gráfica = rampa hasta now, luego proyección hasta xMax
+  const golPorMs = GOL_OBJETIVO_VENTANA / (GOL_VENTANA_MIN * 60000);
+  const objCapAt = now < si.shiftEndDate ? now : si.shiftEndDate; // congela al fin de turno
+  const objNow   = (objCapAt - si.shiftStartDate) * golPorMs;     // KPI: valor a now
   const objPts = [
     { x: si.shiftStartDate.getTime(), y: 0 },
-    { x: xMax.getTime(), y: (objCapAt - si.shiftStartDate) * golPorMs }
+    { x: objCapAt.getTime(),          y: objNow },                 // hasta now (o fin turno)
+    { x: xMax.getTime(),              y: (xMax - si.shiftStartDate) * golPorMs } // proyección
   ];
 
-  const elapsed = objCapAt - si.shiftStartDate;
-  const objNow  = elapsed * golPorMs;
-  const pct     = objNow > 0 ? (cumul / objNow) * 100 : 0;
+  const pct = objNow > 0 ? (cumul / objNow) * 100 : 0;
 
   return {
     realPts, objPts,
@@ -505,6 +508,171 @@ function buildGolSeries(rows, equipoId) {
     xShiftStart: si.shiftStartDate.getTime(),
     xShiftEnd:   si.shiftEndDate.getTime()
   };
+}
+
+// ══════════════════════════════════════════
+//  ÓRDENES DE FABRICACIÓN
+// ══════════════════════════════════════════
+
+// Parsea CSV de órdenes respetando comillas (celdas con comas internas)
+function parseOrdersCSV(text) {
+    const lines = text.trim().split('\n');
+  const result = [];
+  for (const line of lines) {
+    // Split respetando comillas dobles
+    const cells = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === ',' && !inQ) { cells.push(cur.trim()); cur = ''; }
+      else { cur += ch; }
+    }
+    cells.push(cur.trim());
+    result.push(cells);
+  }
+  return result;
+}
+
+// Convierte "14/3/26" o "14/3/2026" + "12:00 p.m." / "14:00" → Date
+function parseOrderDateTime(dateStr, timeStr) {
+  if (!dateStr || dateStr.trim() === '' || dateStr.trim().toLowerCase() === 'x') return null;
+  const dp = dateStr.trim().split('/');
+  if (dp.length < 3) return null;
+  let d = +dp[0], m = +dp[1] - 1, y = +dp[2];
+  if (y < 100) y += 2000;
+
+  let h = 0, min = 0;
+  if (timeStr) {
+    const ts = timeStr.trim();
+    const isPM = /p\.?m/i.test(ts);
+    const isAM = /a\.?m/i.test(ts);
+    const nums = ts.replace(/[^0-9:]/g, '');
+    const tp = nums.split(':');
+    h = +tp[0] || 0; min = +tp[1] || 0;
+    if (isPM && h < 12) h += 12;
+    if (isAM && h === 12) h = 0;
+  }
+  return new Date(y, m, d, h, min, 0);
+}
+
+// Parsea la columna Maquina → array de strings de equipo IDs
+function parseMachineColumn(val) {
+  if (!val || val.trim() === '') return [];
+  return val.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+// Procesa el CSV de órdenes y rellena fabricationOrders
+function processOrders(csvText) {
+  fabricationOrders = {};
+  if (!csvText) return;
+
+  const rows   = parseOrdersCSV(csvText);
+  if (rows.length < 2) return;
+  // headers: IDRecepcion, Material, Cantidad Prevista, Ciclo x Unidad (s),
+  //          Categoria, Fecha, Hora, Maquina, Fecha Fin, Hora Fin
+  const data = rows.slice(1); // saltar encabezado
+
+  // Separar sentinela (última fila sin IDRecepcion pero con Fecha Fin)
+  let sentinelTime = null;
+  const lastRow = data[data.length - 1];
+  if (lastRow && (!lastRow[0] || !lastRow[0].trim())) {
+    sentinelTime = parseOrderDateTime(lastRow[8], lastRow[9]);
+  }
+
+  // Construir órdenes válidas (Fecha != 'x' y tiene IDRecepcion)
+  const orders = [];
+  for (const r of data) {
+    const id = (r[0] || '').trim();
+    if (!id) continue;
+    const fechaStr = (r[5] || '').trim();
+    if (fechaStr.toLowerCase() === 'x') continue;
+
+    const startTime = parseOrderDateTime(fechaStr, r[6]);
+    if (!startTime) continue;
+
+    const tcoVal   = parseFloat(r[3]) || null;
+    const machines = parseMachineColumn(r[7]);
+
+    // endTime explícito (columnas 8-9)
+    const endExplicit = parseOrderDateTime((r[8] || '').trim(), r[9]);
+
+    orders.push({
+      orderNum:  id,
+      model:     (r[1] || '').trim(),
+      qty:       parseFloat(r[2]) || 0,
+      tco:       tcoVal,
+      startTime: startTime.getTime(),
+      endExplicit: endExplicit ? endExplicit.getTime() : null,
+      machines                           // [] → ALL
+    });
+  }
+
+  // Calcular endTime de cada orden
+  // Prioridad: 1) explícito  2) inicio siguiente orden mismo equipo  3) sentinela  4) now
+  orders.forEach((ord, idx) => {
+    if (ord.endExplicit) { ord.endTime = ord.endExplicit; return; }
+
+    // Siguiente orden del mismo equipo (o ALL si esta es ALL)
+    const sameGroup = orders.slice(idx + 1).find(o =>
+      o.machines.length === 0 && ord.machines.length === 0 ||
+      o.machines.some(m => ord.machines.includes(m))
+    );
+    if (sameGroup) { ord.endTime = sameGroup.startTime; return; }
+    if (sentinelTime) { ord.endTime = sentinelTime.getTime(); return; }
+    ord.endTime = Date.now();
+  });
+
+  // Distribuir en fabricationOrders indexado por equipo
+  orders.forEach(ord => {
+    const key = ord.machines.length === 0 ? 'ALL'
+              : ord.machines.length === 1 ? ord.machines[0]
+              : null; // multi-equipo → agregar a cada uno
+
+    if (ord.machines.length === 0) {
+      if (!fabricationOrders['ALL']) fabricationOrders['ALL'] = [];
+      fabricationOrders['ALL'].push(ord);
+    } else {
+      ord.machines.forEach(m => {
+        if (!fabricationOrders[m]) fabricationOrders[m] = [];
+        fabricationOrders[m].push(ord);
+      });
+    }
+  });
+}
+
+// Devuelve el TCO activo para un equipo en un timestamp dado.
+// Retroactivo: si existe una única orden para el equipo en el turno,
+// se aplica desde el inicio del turno aunque el timestamp sea anterior a su startTime.
+function getTCOForTimestamp(ts, equipoId) {
+  const specific = fabricationOrders[equipoId] || [];
+  const all      = fabricationOrders['ALL']    || [];
+  const combined = [...specific, ...all];
+
+  // 1. Orden exacta que contiene el timestamp
+  const active = combined.find(o => ts >= o.startTime && ts < o.endTime);
+  if (active && active.tco) return active.tco;
+
+  // 2. Retroactivo: solo órdenes sin fin explícito o cuyo fin no ha pasado aún
+  //    Si hay una orden activa para el turno (sin fecha de fin), aplicar su TCO
+  const withTco = combined.filter(o => o.tco && (!o.endExplicit || o.endTime > ts));
+  if (withTco.length === 1) return withTco[0].tco;
+  if (withTco.length > 1) {
+    // Múltiples: la más cercana anterior al timestamp
+    const past = withTco.filter(o => o.startTime <= ts).sort((a, b) => b.startTime - a.startTime);
+    if (past.length) return past[0].tco;
+    const future = withTco.sort((a, b) => a.startTime - b.startTime);
+    if (future.length) return future[0].tco;
+  }
+
+  return MACHINE_CONFIGS[currentMachine].tco || TCO_DEFAULT;
+}
+
+// Devuelve las órdenes activas para un equipo (específicas + ALL)
+function getOrdersForEquipo(equipoId) {
+  const specific = (fabricationOrders[equipoId] || []).slice();
+  const all      = (fabricationOrders['ALL']    || []).slice();
+  return [...specific, ...all].sort((a, b) => a.startTime - b.startTime);
 }
 
 // ══════════════════════════════════════════
@@ -535,17 +703,36 @@ function buildEquipoSeries(rows, equipoId, tco) {
   events.forEach(e => { cumul++; realPts.push({ x: e.dt.getTime(), y: cumul }); });
   realPts.push({ x: now.getTime(), y: cumul });
 
-  // Objetivo (rampa lineal) — se congela al fin del turno
-  const pphora    = 3600 / tco;
-  const objCapAt  = now < si.shiftEndDate ? now : si.shiftEndDate; // no crece fuera de turno
-  const objPts    = [
-    { x: si.shiftStartDate.getTime(), y: 0 },
-    { x: xMax.getTime(), y: (objCapAt - si.shiftStartDate) / 3600000 * pphora }
-  ];
+  // Objetivo con TCO dinámico por orden de fabricación
+  // Construimos la rampa recorriendo el tiempo en pasos de 1 min,
+  // cambiando la pendiente según qué orden esté activa en cada momento.
+  // KPI = valor acumulado a objCapAt (congelado al fin del turno).
+  const objCapAt = now < si.shiftEndDate ? now : si.shiftEndDate;
+  const objPts   = [{ x: si.shiftStartDate.getTime(), y: 0 }];
+  const STEP_MS  = 60000; // resolución: 1 minuto
+  let   objAcum  = 0;
+  let   tCur     = si.shiftStartDate.getTime();
+  const tEnd     = xMax.getTime();
+  while (tCur < tEnd) {
+    const tNext  = Math.min(tCur + STEP_MS, tEnd);
+    const segTco = getTCOForTimestamp(tCur, equipoId);
+    objAcum     += (tNext - tCur) / 1000 / segTco; // piezas en este segmento
+    objPts.push({ x: tNext, y: objAcum });
+    tCur = tNext;
+  }
+  // KPI: valor del objetivo exactamente en objCapAt
+  const objNow = (() => {
+    let acc = 0, t = si.shiftStartDate.getTime();
+    const cap = objCapAt.getTime();
+    while (t < cap) {
+      const tn  = Math.min(t + STEP_MS, cap);
+      acc += (tn - t) / 1000 / getTCOForTimestamp(t, equipoId);
+      t = tn;
+    }
+    return acc;
+  })();
 
-  const elapsed = (objCapAt - si.shiftStartDate) / 3600000;
-  const objNow  = elapsed * pphora;
-  const pct     = objNow > 0 ? (cumul / objNow) * 100 : 0;
+  const pct = objNow > 0 ? (cumul / objNow) * 100 : 0;
 
   return {
     realPts, objPts,
@@ -699,9 +886,31 @@ function renderCharts() {
 
     // ── Textos adaptativos según modo ──
     const golPorH     = (GOL_OBJETIVO_VENTANA / GOL_VENTANA_MIN * 60).toFixed(0);
-    const subtitleTxt = isGol
-      ? `${cfg.name} &middot; GOL &middot; ${GOL_OBJETIVO_VENTANA} golpes / ${GOL_VENTANA_MIN} min &middot; ${golPorH} golpes/h`
-      : `${cfg.name} &middot; TCO ${tco}s &middot; ${(3600/tco).toFixed(1)} pzas/h`;
+    // Para modo TM: buscar orden relevante para el equipo y mostrar sus datos
+    let activeTco = tco;
+    let subtitleTxt;
+    if (isGol) {
+      subtitleTxt = `${cfg.name} &middot; GOL &middot; ${GOL_OBJETIVO_VENTANA} golpes / ${GOL_VENTANA_MIN} min &middot; ${golPorH} golpes/h`;
+    } else {
+      const allOrds = [...(fabricationOrders[eqId] || []), ...(fabricationOrders['ALL'] || [])];
+      const now_ts  = Date.now();
+      // Prioridad:
+      // 1) Orden que contiene now en su rango [startTime, endTime)
+      // 2) Orden sin endTime explícito (en curso, sin fecha de fin definida)
+      // 3) Fallback al TCO del config — no mostrar órdenes ya finalizadas
+      const activeOrd = allOrds.find(o => now_ts >= o.startTime && now_ts < o.endTime)
+                     || allOrds.find(o => !o.endExplicit && o.startTime <= now_ts);
+      if (activeOrd) {
+        activeTco = activeOrd.tco || tco;
+        const pzasH = (3600 / activeTco).toFixed(1);
+        const parts = [cfg.name, `TCO ${activeTco}s`, `${pzasH} pzas/h`];
+        if (activeOrd.model) parts.push(`<span style="color:var(--text);font-weight:600">${activeOrd.model}</span>`);
+        if (activeOrd.orderNum) parts.push(`<span style="color:var(--muted)">${activeOrd.orderNum}</span>`);
+        subtitleTxt = parts.join(' &middot; ');
+      } else {
+        subtitleTxt = `${cfg.name} &middot; TCO ${activeTco}s &middot; ${(3600/activeTco).toFixed(1)} pzas/h`;
+      }
+    }
     const realLbl   = 'Real';
     const objLbl    = isGol ? 'Objetivo' : 'Objetivo';
     const realVal   = Math.round(s.current);
@@ -793,8 +1002,8 @@ function renderCharts() {
                   : `${c.dataset.label}: ${Math.round(c.parsed.y)} uds`
               }
             },
-            annotation: {
-              annotations: {
+            annotation: (() => {
+              const ann = {
                 lineStart: {
                   type: 'line', scaleID: 'x', value: s.xShiftStart,
                   borderColor: 'rgba(59,130,246,0.55)', borderWidth: 1.5, borderDash: [4, 3],
@@ -807,8 +1016,10 @@ function renderCharts() {
                   label: { content: 'Fin turno', display: true, position: 'start',
                            color: '#7a8599', font: { size: 10 }, backgroundColor: 'transparent', padding: 2 }
                 }
-              }
-            }
+              };
+              // Sin anotaciones de órdenes en el gráfico — la info se muestra en el subtitle del card
+              return { annotations: ann };
+            })()
           },
           scales: {
             x: {
@@ -842,10 +1053,22 @@ async function loadData() {
   showLoading('Cargando datos...');
   hideError();
   try {
-    const cfg  = MACHINE_CONFIGS[currentMachine];
-    const resp = await fetch(cfg.csvUrl + '&_nc=' + Date.now());
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    _rows = parseCSV(await resp.text());
+    const cfg = MACHINE_CONFIGS[currentMachine];
+
+    // Fetch producción y órdenes en paralelo
+    const fetches = [fetch(cfg.csvUrl + '&_nc=' + Date.now())];
+    if (cfg.ordersUrl) fetches.push(fetch(cfg.ordersUrl + '&_nc=' + Date.now()));
+
+    const results = await Promise.all(fetches);
+    if (!results[0].ok) throw new Error('HTTP ' + results[0].status);
+    _rows = parseCSV(await results[0].text());
+
+    // Procesar órdenes si hay URL configurada
+    if (cfg.ordersUrl && results[1] && results[1].ok) {
+      processOrders(await results[1].text());
+    } else {
+      fabricationOrders = {}; // limpiar si no hay órdenes
+    }
 
     // Detectar turno activo
     const si  = getShiftInfo(_rows);
@@ -862,8 +1085,9 @@ async function loadData() {
         .map(r => r.equipo)
     )].sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
 
-    buildMachineMenu();
-    buildViewMenu();
+    buildMachineMenu();  // siempre: actualiza checkmark de máquina activa
+    buildViewMenu();     // siempre: reconstruye opciones con allEquipos actualizado
+
     renderCharts();
 
     const badge = document.getElementById('shift-badge');
@@ -930,8 +1154,7 @@ function resizeAllCharts() {
 window.addEventListener('resize', resizeAllCharts);
 
 // ── INIT
-buildMachineMenu();
-loadData();
+loadData(); // buildMachineMenu y buildViewMenu se llaman dentro de loadData
 </script>
 </body>
 </html>
